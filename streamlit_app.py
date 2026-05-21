@@ -1,243 +1,9 @@
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import datetime
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-import json
-
-RUSH_ORANGE = "#FF6B00"
-RUSH_TEAL   = "#00AFAA"
-RUSH_YELLOW = "#FDD756"
-RUSH_RED    = "#CE0E2D"
-RUSH_GREY   = "#667085"
-RUSH_DARK   = "#2B2F38"
-RUSH_WHITE  = "#FFFFFF"
-
-st.set_page_config(page_title="RUSH Project Tracker", layout="wide", initial_sidebar_state="expanded")
-st.markdown(f"""<style>
-.stApp {{background-color:{RUSH_WHITE};}}
-.stMetricValue {{color:{RUSH_ORANGE};font-weight:bold;}}
-h1,h2,h3 {{color:{RUSH_DARK};}}
-.lsec {{font-weight:700;font-size:15px;color:{RUSH_ORANGE};margin-top:16px;margin-bottom:6px;border-left:4px solid {RUSH_ORANGE};padding-left:8px;}}
-.flbl {{font-weight:600;color:{RUSH_DARK};font-size:13px;margin-bottom:4px;display:block;}}
-</style>""", unsafe_allow_html=True)
-
-st.title("RUSH Project Tracker")
-
-# ── Google Sheets ────────────────────────────────────────────────
-SHEET_ID   = st.secrets["GOOGLE_SHEETS_ID"]
-SA_CREDS   = st.secrets["service_account"]
-SCOPE      = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/drive"]
-
-PROJECT_COLS = [
-    "ID","Doc Type","Project Name","Control Number","Merchant","Endorsed By",
-    "Project Price","Links","Date Endorsed Commercial","Doc Expiry Date",
-    "Date Endorsed BA","Assigned BA","Date Ack BA","Doc State","Tribe",
-    "Project Status","Date Endorsed Tech","Go Live Date","Approval Status","Remarks","Created At"
-]
-
-@st.cache_resource
-def get_gc():
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(dict(SA_CREDS), scopes=SCOPE)
-    return gspread.authorize(creds)
-
-def get_sheet(tab):
-    gc = get_gc()
-    sh = gc.open_by_key(SHEET_ID)
-    try:
-        return sh.worksheet(tab)
-    except:
-        ws = sh.add_worksheet(tab, rows=1000, cols=30)
-        if tab == "Projects":
-            ws.append_row(PROJECT_COLS)
-        elif tab == "Settings":
-            ws.append_row(["key","value"])
-        return ws
-
-@st.cache_data(ttl=15)
-def load_projects():
-    try:
-        ws = get_sheet("Projects")
-        records = ws.get_all_records()
-        return records
-    except:
-        return []
-
-def save_project(p):
-    ws = get_sheet("Projects")
-    ws.append_row([p.get(c,"") for c in PROJECT_COLS])
-    load_projects.clear()
-
-def delete_project_row(project_id):
-    ws = get_sheet("Projects")
-    cell = ws.find(project_id)
-    if cell:
-        ws.delete_rows(cell.row)
-    load_projects.clear()
-
-@st.cache_data(ttl=30)
-def load_settings():
-    try:
-        ws = get_sheet("Settings")
-        records = ws.get_all_records()
-        result = {}
-        for r in records:
-            result[r["key"]] = json.loads(r["value"]) if r.get("value") else []
-        return result
-    except:
-        return {}
-
-def save_settings(settings_dict):
-    ws = get_sheet("Settings")
-    ws.clear()
-    ws.append_row(["key","value"])
-    for k, v in settings_dict.items():
-        ws.append_row([k, json.dumps(v)])
-    load_settings.clear()
-
-# ── Session State Init ───────────────────────────────────────────
-if "projects" not in st.session_state:
-    st.session_state.projects = load_projects()
-
-DEFAULT_SETTINGS = {
-    "doc_types": ["CRF","BRF","FEF","System Design","Feature Spec","Integration Doc","Release Notes"],
-    "ba_list":   ["BA001 - John Smith","BA002 - Maria Garcia","BA003 - Sarah Chen","BA004 - Ahmed Hassan"],
-    "doc_states":["Draft","In Review","Approved","Published","Archived"],
-    "tribes":    ["Core Tribe","Growth Tribe","Infrastructure Tribe","Platform Tribe"],
-    "statuses":  ["Backlog","In Progress","In Review","Testing","Ready to Launch","Live","On Hold","Completed"]
-}
-
-if "settings" not in st.session_state:
-    remote = load_settings()
-    st.session_state.settings = {k: remote.get(k, v) for k, v in DEFAULT_SETTINGS.items()}
-
-# ── Sidebar Settings ──────────────────────────────────────────────
-st.sidebar.title("Settings")
-s = st.session_state.settings
-
-def manage_list(label, key):
-    items = s[key]
-    with st.sidebar.expander(label):
-        st.write(f"**{label}:**")
-        for i, item in enumerate(items):
-            c1,c2 = st.columns([0.8,0.2])
-            c1.write(f"• {item}")
-            if c2.button("X", key=f"d_{key}_{i}"):
-                items.pop(i)
-                save_settings(s)
-                st.rerun()
-        c1,c2 = st.columns([0.75,0.25])
-        nv = c1.text_input("", key=f"n_{key}", label_visibility="collapsed", placeholder="Add new...")
-        if c2.button("Add", key=f"a_{key}"):
-            if nv and nv not in items:
-                items.append(nv)
-                save_settings(s)
-                st.rerun()
-
-manage_list("Document Types","doc_types")
-manage_list("Assigned BAs","ba_list")
-manage_list("Document States","doc_states")
-manage_list("Tribes","tribes")
-manage_list("Project Statuses","statuses")
-
-doc_types  = s["doc_types"]
-ba_list    = s["ba_list"]
-doc_states = s["doc_states"]
-tribes     = s["tribes"]
-statuses   = s["statuses"]
-
-# ── Tabs ──────────────────────────────────────────────────────────
-tab1, tab2 = st.tabs(["Dashboard", "All Projects"])
-
-def lsec(t): st.markdown(f'<p class="lsec">{t}</p>', unsafe_allow_html=True)
-def flbl(t): st.markdown(f'<span class="flbl">{t}</span>', unsafe_allow_html=True)
-
-def tag_expiry(projects):
-    today = datetime.now().date()
-    for p in projects:
-        try:
-            exp_val = p.get("Doc Expiry Date","")
-            if exp_val and exp_val != "None" and exp_val != "":
-                exp = datetime.strptime(str(exp_val), "%Y-%m-%d").date()
-                p["expiry_status"] = "Expired" if exp < today else ("Expiring Soon" if (exp-today).days<=7 else "Active")
-            else:
-                p["expiry_status"] = "Active"
-        except:
-            p["expiry_status"] = "Active"
-    return projects
-
-# ── Tab 1: Dashboard ──────────────────────────────────────────────
-with tab1:
-    st.subheader("Project Dashboard")
-    projects = tag_expiry(load_projects())
-
-    if projects:
-        total       = len(projects)
-        in_progress = sum(1 for p in projects if p.get("Project Status")=="In Progress")
-        live        = sum(1 for p in projects if p.get("Project Status")=="Live")
-        on_hold     = sum(1 for p in projects if p.get("Project Status")=="On Hold")
-        expired     = sum(1 for p in projects if p.get("expiry_status")=="Expired")
-        exp_soon    = sum(1 for p in projects if p.get("expiry_status")=="Expiring Soon")
-
-        c1,c2,c3,c4,c5,c6 = st.columns(6)
-        c1.metric("Total", total)
-        c2.metric("In Progress", in_progress)
-        c3.metric("Live", live)
-        c4.metric("On Hold", on_hold)
-        c5.metric("Expired", expired)
-        c6.metric("Expiring Soon", exp_soon)
-
-        st.markdown("---")
-        st.subheader("Project Pipeline & Movement Progress")
-        status_order = ["Backlog", "In Progress", "In Review", "Testing", "Ready to Launch", "Live", "Completed"]
-        status_counts = {stage: sum(1 for p in projects if p.get("Project Status") == stage) for stage in status_order}
-        
-        fig_funnel = go.Figure(go.Funnel(
-            y=list(status_counts.keys()),
-            x=list(status_counts.values()),
-            marker={"color": [RUSH_GREY, RUSH_ORANGE, RUSH_YELLOW, RUSH_TEAL, RUSH_TEAL, RUSH_ORANGE, RUSH_GREY]},
-            textinfo="value+percent initial"
-        ))
-        fig_funnel.update_layout(paper_bgcolor=RUSH_WHITE, plot_bgcolor=RUSH_WHITE, font=dict(color=RUSH_DARK), margin=dict(l=40, r=40, t=40, b=40))
-        st.plotly_chart(fig_funnel, use_container_width=True)
-        
-        st.markdown("---")
-        st.subheader("Individual Project Milestone Tracking")
-        selected_p_name = st.selectbox("Select a project to inspect dynamic movement timeline:", [p.get("Project Name") for p in projects])
-        
-        if selected_p_name:
-            p_data = next(p for p in projects if p.get("Project Name") == selected_p_name)
-            milestones = {
-                "Commercial Endorsement": p_data.get("Date Endorsed Commercial"),
-                "Tech Endorsement": p_data.get("Date Endorsed Tech"),
-                "BA Endorsement": p_data.get("Date Endorsed BA"),
-                "BA Acknowledgement": p_data.get("Date Ack BA"),
-                "Go Live Date": p_data.get("Go Live Date")
-            }
-            
-            ms_cols = st.columns(len(milestones))
-            for idx, (ms_name, ms_date) in enumerate(milestones.items()):
-                with ms_cols[idx]:
-                    is_complete = ms_date and ms_date != "None" and ms_date != ""
-                    status_box = f"🟢 **Completed**<br>`{ms_date}`" if is_complete else "⚪ *Pending*"
-                    st.markdown(f"""
-                    <div style="border: 1px solid {RUSH_GREY}; padding: 12px; border-radius: 6px; background-color: {RUSH_WHITE}; text-align: center;">
-                        <span style="font-size: 13px; font-weight: 600; color: {RUSH_DARK};">{ms_name}</span><br>
-                        <span style="font-size: 14px; margin-top: 6px; display: inline-block;">{status_box}</span>
-                    </div>
-                    """, unsafe_allow_html=True)
-    else:
-        st.info("No projects yet. Add one in the All Projects tab!")
-
 # ── Tab 2: All Projects ───────────────────────────────────────────
 with tab2:
     st.subheader("All Projects Registry")
     projects = tag_expiry(load_projects())
     
     # Using an interactive Popover container ensures the form opens cleanly as an overlay 
-    # instead of rendering directly onto the page or stretching the records view
     with st.popover("➕ Create New Project", use_container_width=True):
         st.markdown("### New Project Information")
         
@@ -351,6 +117,9 @@ with tab2:
     if projects:
         unique_merchants = sorted(list(set(p.get("Merchant") for p in projects if p.get("Merchant"))))
         
+        # CRITICAL FIX: Pre-initialize filter variables to guarantee namespace safety
+        f_status, f_tribe, f_expiry, f_merchant = [], [], [], []
+        
         # Filter Layout Grid
         c1, c2, c3, c4 = st.columns(4)
         with c1: f_status = st.multiselect("Filter Status", statuses, default=[])
@@ -358,4 +127,48 @@ with tab2:
         with c3: f_expiry = st.multiselect("Filter Expiry", ["Active","Expiring Soon","Expired"], default=[])
         with c4: f_merchant = st.multiselect("Filter Merchant", unique_merchants, default=[])
 
-        filtered
+        # Evaluate project filters safely
+        filtered = [p for p in projects
+                    if (not f_status or p.get("Project Status") in f_status)
+                    and (not f_tribe  or p.get("Tribe") in f_tribe)
+                    and (not f_expiry or p.get("expiry_status") in f_expiry)
+                    and (not f_merchant or p.get("Merchant") in f_merchant)]
+
+        st.markdown("---")
+        
+        # ── Column Form Layout Header Block ──────────────────
+        th1, th2, th3, th4, th5, th6, th7, th8 = st.columns([1.5, 2.0, 1.5, 1.2, 1.2, 1.2, 1.5, 0.8])
+        th1.markdown("**Control #**")
+        th2.markdown("**Project Name**")
+        th3.markdown("**Merchant**")
+        th4.markdown("**Status**")
+        th5.markdown("**Tribe**")
+        th6.markdown("**Doc Type**")
+        th7.markdown("**Details**")
+        th8.markdown("**Action**")
+        st.markdown("<hr style='margin:4px 0px 12px 0px; border-top: 2px solid #2B2F38;' />", unsafe_allow_html=True)
+        
+        # ── Column Grid Rows Content ──────────────────────────────────────
+        for idx, p in enumerate(filtered):
+            r1, r2, r3, r4, r5, r6, r7, r8 = st.columns([1.5, 2.0, 1.5, 1.2, 1.2, 1.2, 1.5, 0.8])
+            
+            r1.write(p.get("Control Number"))
+            r2.write(f"**{p.get('Project Name')}**")
+            r3.write(p.get("Merchant") or "N/A")
+            r4.write(p.get("Project Status"))
+            r5.write(p.get("Tribe"))
+            r6.write(p.get("Doc Type"))
+            
+            detail_text = f"PHP {float(p.get('Project Price',0) or 0):,.2f} | {p.get('Doc State')}"
+            if p.get("Doc Type") == "CRF":
+                detail_text += f" | Appr: {p.get('Approval Status')}"
+            r7.write(detail_text)
+            
+            with r8:
+                if st.button("Delete", key=f"del_{idx}", use_container_width=True, type="secondary"):
+                    delete_project_row(p.get("ID",""))
+                    st.rerun()
+                    
+            st.markdown("<hr style='margin:6px 0px; border-top: 1px solid #E5E5E5;' />", unsafe_allow_html=True)
+    else:
+        st.info("No projects match the current filter configuration.")
