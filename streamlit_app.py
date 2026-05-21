@@ -195,6 +195,11 @@ with tab1:
 
     doc_type = st.selectbox("Document Type *", placeholder_doc_types, index=0, key="f_doctype")
     
+    # Conditional visibility requirement: If CRF, render a dropdown asking if it's BRF or FEF track
+    crf_subtype = ""
+    if doc_type == "CRF":
+        crf_subtype = st.selectbox("CRF Type Option", ["", "BRF", "FEF"], index=0, key="f_crf_subtype")
+    
     with st.form("create_form", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
@@ -219,13 +224,16 @@ with tab1:
         else:
             approval_status = "N/A"
 
-        # Grouped Date Pair 1: Commercial and Expiry
-        lsec("Commercial Timeline")
-        g1_left, g1_right = st.columns(2)
-        with g1_left: d_commercial = st.date_input("Date Endorsed to Commercials", value=None, key="f_dcom")
-        with g1_right: d_expiry = st.date_input("Document Expiry Date", value=None, key="f_dexp")
+        # Conditional visibility layout: Commercial Timeline visible only for CRF tracking
+        if doc_type == "CRF":
+            lsec("Commercial Timeline")
+            g1_left, g1_right = st.columns(2)
+            with g1_left: d_commercial = st.date_input("Date Endorsed to Commercials", value=None, key="f_dcom")
+            with g1_right: d_expiry = st.date_input("Document Expiry Date", value=None, key="f_dexp")
+        else:
+            d_commercial = ""
+            d_expiry = ""
 
-        # Grouped Date Pair 2: BA Dates positioned clearly ABOVE Assignment & Workflow parameters
         lsec("BA Assignment & Workflow")
         g2_left, g2_right = st.columns(2)
         with g2_left: d_ba = st.date_input("Date Endorsed to BA", value=None, key="f_dba")
@@ -237,7 +245,6 @@ with tab1:
         with c2:
             doc_state = st.selectbox("Document State", placeholder_doc_states, index=0, key="f_docstate")
 
-        # Tribe and Sprint grouping
         lsec("Tribe & Sprint Parameters")
         c1, c2 = st.columns(2)
         with c1:
@@ -245,7 +252,6 @@ with tab1:
         with c2:
             sprint = st.text_input("Sprint (Optional)", placeholder="e.g., Sprint 42", key="f_sprint")
 
-        # Grouped Date Pair 3: Tech Timeline and Workflow Status
         lsec("Tech Timeline & Status")
         g3_left, g3_right = st.columns(2)
         with g3_left: d_tech = st.date_input("Date Endorsed to Tech", value=None, key="f_dtech")
@@ -268,7 +274,7 @@ with tab1:
                 st.error("Document Type and Project Name are mandatory fields.")
             else:
                 year_str = datetime.now().strftime("%Y")
-                type_seq = sum(1 for p in load_projects() if p.get("Doc Type") == doc_type) + 1
+                type_seq = sum(1 for p in load_projects() if p.get("Doc Type", "").startswith(doc_type)) + 1
                 
                 if ctrl_no:
                     final_ctrl = ctrl_no
@@ -290,9 +296,12 @@ with tab1:
                 if fef_url: links_compiled.append(f"FEF: {fef_url}")
                 if figma_url: links_compiled.append(f"Figma: {figma_url}")
 
+                # Compile structured Doc Type title description if sub-selected
+                final_saved_doc_type = f"CRF - {crf_subtype}" if (doc_type == "CRF" and crf_subtype) else doc_type
+
                 new_p = {
                     "ID": datetime.now().isoformat(),
-                    "Doc Type": doc_type, "Project Name": project_name,
+                    "Doc Type": final_saved_doc_type, "Project Name": project_name,
                     "Control Number": final_ctrl, "PO Status": po_status, "Merchant": merchant,
                     "Endorsed By": endorsed_by, "Project Price": price,
                     "Links": " | ".join(links_compiled),
@@ -363,7 +372,7 @@ with tab2:
             detail_items = [f"PHP {float(p.get('Project Price',0) or 0):,.2f}"]
             if p.get("Sprint"): detail_items.append(f"Sprint: {p.get('Sprint')}")
             if p.get("PO Status"): detail_items.append(f"PO: {p.get('PO Status')}")
-            if p.get("Doc Type") in ["CRF", "BRF", "FEF"] and p.get("Approval Status"):
+            if p.get("Approval Status") and p.get("Approval Status") != "N/A":
                 detail_items.append(f"Project Appr: {p.get('Approval Status')}")
                 
             r7.write(" | ".join(detail_items))
@@ -379,9 +388,18 @@ with tab2:
                     e_statuses = [""] + statuses
                     e_po_status = ["", "Done", "Not Yet Done"]
                     
-                    edit_doc_type = st.selectbox("Document Type *", e_doc_types, index=safe_index(e_doc_types, p.get("Doc Type")), key=f"e_dt_{idx}")
-                    edit_name = st.text_input("Project Name *", value=p.get("Project Name"), key=f"e_nm_{idx}")
+                    # Unpack composite Doc Type elements safely for parsing back into dropdown forms
+                    raw_stored_type = p.get("Doc Type", "")
+                    base_parsed_type = "CRF" if raw_stored_type.startswith("CRF") else raw_stored_type
+                    extracted_sub = raw_stored_type.split(" - ")[1] if " - " in raw_stored_type else ""
+
+                    edit_doc_type = st.selectbox("Document Type *", e_doc_types, index=safe_index(e_doc_types, base_parsed_type), key=f"e_dt_{idx}")
                     
+                    edit_crf_subtype = ""
+                    if edit_doc_type == "CRF":
+                        edit_crf_subtype = st.selectbox("CRF Type Option", ["", "BRF", "FEF"], index=safe_index(["", "BRF", "FEF"], extracted_sub), key=f"e_crf_sub_{idx}")
+
+                    edit_name = st.text_input("Project Name *", value=p.get("Project Name"), key=f"e_nm_{idx}")
                     edit_ctrl = st.text_input("Control Number", value=p.get("Control Number"), key=f"e_ctrl_{idx}")
                     edit_po = st.selectbox("PO Status", e_po_status, index=safe_index(e_po_status, p.get("PO Status")), key=f"e_po_{idx}")
                     
@@ -400,10 +418,13 @@ with tab2:
                         except:
                             return None
 
-                    # Matching identical paired positioning in Edit structure overlay view
-                    lsec("Commercial Timeline")
-                    ed_com = st.date_input("Date Endorsed to Commercials", value=parse_date_safely(p.get("Date Endorsed Commercial")), key=f"ed_com_{idx}")
-                    ed_exp = st.date_input("Document Expiry Date", value=parse_date_safely(p.get("Doc Expiry Date")), key=f"ed_exp_{idx}")
+                    # Conditional Editing Visibility: Commercial dates rendered only for CRF tracks
+                    if edit_doc_type == "CRF":
+                        lsec("Commercial Timeline")
+                        ed_com = st.date_input("Date Endorsed to Commercials", value=parse_date_safely(p.get("Date Endorsed Commercial")), key=f"ed_com_{idx}")
+                        ed_exp = st.date_input("Document Expiry Date", value=parse_date_safely(p.get("Doc Expiry Date")), key=f"ed_exp_{idx}")
+                    else:
+                        ed_com, ed_exp = "", ""
 
                     lsec("BA Assignment & Workflow")
                     ed_ba = st.date_input("Date Endorsed to BA", value=parse_date_safely(p.get("Date Endorsed BA")), key=f"ed_ba_{idx}")
@@ -427,9 +448,11 @@ with tab2:
                         if not edit_name or edit_doc_type == "":
                             st.error("Mandatory fields missing.")
                         else:
+                            final_edit_doc_type = f"CRF - {edit_crf_subtype}" if (edit_doc_type == "CRF" and edit_crf_subtype) else edit_doc_type
+                            
                             updated_p = {
                                 "ID": p.get("ID"),
-                                "Doc Type": edit_doc_type,
+                                "Doc Type": final_edit_doc_type,
                                 "Project Name": edit_name,
                                 "Control Number": edit_ctrl,
                                 "PO Status": edit_po,
