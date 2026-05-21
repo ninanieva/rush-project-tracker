@@ -37,7 +37,6 @@ PROJECT_COLS = [
     "Date Endorsed BA","Assigned BA","Date Ack BA","Doc State","Tribe",
     "Project Status","Date Endorsed Tech","Go Live Date","Approval Status","Remarks","Created At"
 ]
-SETTINGS_COLS = ["doc_types","ba_list","doc_states","tribes","statuses"]
 
 @st.cache_resource
 def get_gc():
@@ -99,14 +98,8 @@ def save_settings(settings_dict):
     load_settings.clear()
 
 # ── Session State Init ───────────────────────────────────────────
-if "user_email" not in st.session_state:
-    st.session_state.user_email = None
 if "projects" not in st.session_state:
-    st.session_state.projects = []
-if "settings_loaded" not in st.session_state:
-    st.session_state.settings_loaded = False
-if "show_create_form" not in st.session_state:
-    st.session_state.show_create_form = False
+    st.session_state.projects = load_projects()
 
 DEFAULT_SETTINGS = {
     "doc_types": ["CRF","BRF","FEF","System Design","Feature Spec","Integration Doc","Release Notes"],
@@ -120,45 +113,8 @@ if "settings" not in st.session_state:
     remote = load_settings()
     st.session_state.settings = {k: remote.get(k, v) for k, v in DEFAULT_SETTINGS.items()}
 
-# ── Auth ──────────────────────────────────────────────────────────
-if not st.session_state.user_email:
-    st.sidebar.title("Login")
-    mode = st.sidebar.radio("", ["Sign In","Sign Up"], label_visibility="collapsed")
-    _, col, _ = st.columns([1,2,1])
-    with col:
-        st.markdown("## Welcome to RUSH Project Tracker")
-        st.markdown(f"**Email**")
-        email = st.text_input("", placeholder="you@rush.ph", key="auth_email", label_visibility="collapsed")
-        st.markdown("**Password**")
-        pwd = st.text_input("", type="password", key="auth_pwd", label_visibility="collapsed")
-        if mode == "Sign Up":
-            st.markdown("**Confirm Password**")
-            cpwd = st.text_input("", type="password", key="auth_cpwd", label_visibility="collapsed")
-        if st.button("Continue", use_container_width=True):
-            if not email or not pwd:
-                st.error("Fill all fields")
-            elif len(pwd) < 6:
-                st.error("Password min 6 characters")
-            elif mode == "Sign Up" and pwd != cpwd:
-                st.error("Passwords do not match")
-            else:
-                st.session_state.user_email = email
-                st.session_state.projects   = load_projects()
-                st.rerun()
-    st.stop()
-
-# ── Sidebar ───────────────────────────────────────────────────────
-st.sidebar.markdown(f"**{st.session_state.user_email}**")
-if st.sidebar.button("Sign Out", use_container_width=True):
-    st.session_state.user_email = None
-    st.rerun()
-if st.sidebar.button("Refresh Data", use_container_width=True):
-    load_projects.clear()
-    st.session_state.projects = load_projects()
-    st.rerun()
-st.sidebar.markdown("---")
+# ── Sidebar Settings ──────────────────────────────────────────────
 st.sidebar.title("Settings")
-
 s = st.session_state.settings
 
 def manage_list(label, key):
@@ -198,7 +154,6 @@ tab1, tab2 = st.tabs(["Dashboard", "All Projects"])
 def lsec(t): st.markdown(f'<p class="lsec">{t}</p>', unsafe_allow_html=True)
 def flbl(t): st.markdown(f'<span class="flbl">{t}</span>', unsafe_allow_html=True)
 
-# ── Expiry Helper ─────────────────────────────────────────────────
 def tag_expiry(projects):
     today = datetime.now().date()
     for p in projects:
@@ -236,8 +191,6 @@ with tab1:
 
         st.markdown("---")
         st.subheader("Project Pipeline & Movement Progress")
-        
-        # Display sequential funnel flow matching pipeline progression
         status_order = ["Backlog", "In Progress", "In Review", "Testing", "Ready to Launch", "Live", "Completed"]
         status_counts = {stage: sum(1 for p in projects if p.get("Project Status") == stage) for stage in status_order}
         
@@ -247,7 +200,7 @@ with tab1:
             marker={"color": [RUSH_GREY, RUSH_ORANGE, RUSH_YELLOW, RUSH_TEAL, RUSH_TEAL, RUSH_ORANGE, RUSH_GREY]},
             textinfo="value+percent initial"
         ))
-        fig_funnel.update_layout(title_text="Project Volume Movement Through Pipeline States", paper_bgcolor=RUSH_WHITE, plot_bgcolor=RUSH_WHITE, font=dict(color=RUSH_DARK), margin=dict(l=40, r=40, t=40, b=40))
+        fig_funnel.update_layout(paper_bgcolor=RUSH_WHITE, plot_bgcolor=RUSH_WHITE, font=dict(color=RUSH_DARK), margin=dict(l=40, r=40, t=40, b=40))
         st.plotly_chart(fig_funnel, use_container_width=True)
         
         st.markdown("---")
@@ -256,7 +209,6 @@ with tab1:
         
         if selected_p_name:
             p_data = next(p for p in projects if p.get("Project Name") == selected_p_name)
-            
             milestones = {
                 "Commercial Endorsement": p_data.get("Date Endorsed Commercial"),
                 "Tech Endorsement": p_data.get("Date Endorsed Tech"),
@@ -276,150 +228,80 @@ with tab1:
                         <span style="font-size: 14px; margin-top: 6px; display: inline-block;">{status_box}</span>
                     </div>
                     """, unsafe_allow_html=True)
-
-        st.markdown("---")
-        c1,c2 = st.columns(2)
-        with c1:
-            sd = pd.Series([p.get("Project Status") for p in projects]).value_counts()
-            fig = px.pie(values=sd.values, names=sd.index, title="Project Status Distribution",
-                         color_discrete_sequence=[RUSH_ORANGE,RUSH_TEAL,RUSH_YELLOW,RUSH_RED,RUSH_GREY])
-            fig.update_layout(paper_bgcolor=RUSH_WHITE, plot_bgcolor=RUSH_WHITE, font=dict(color=RUSH_DARK))
-            st.plotly_chart(fig, use_container_width=True)
-        with c2:
-            td = pd.Series([p.get("Tribe") for p in projects]).value_counts()
-            fig = px.bar(x=td.values, y=td.index, orientation='h', title="Projects by Tribe",
-                         color_discrete_sequence=[RUSH_TEAL])
-            fig.update_layout(paper_bgcolor=RUSH_WHITE, plot_bgcolor=RUSH_WHITE, font=dict(color=RUSH_DARK), yaxis_title="")
-            st.plotly_chart(fig, use_container_width=True)
-
     else:
-        st.info("No projects yet. Create one in the All Projects tab!")
+        st.info("No projects yet. Add one in the All Projects tab!")
 
 # ── Tab 2: All Projects ───────────────────────────────────────────
 with tab2:
-    st.subheader("All Projects")
+    st.subheader("All Projects Registry")
     projects = tag_expiry(load_projects())
     
-    # Toggle formulation area inline
-    if not st.session_state.show_create_form:
-        if st.button("Create New Project", type="primary"):
-            st.session_state.show_create_form = True
-            st.rerun()
-    else:
-        if st.button("Close Creation Form"):
-            st.session_state.show_create_form = False
-            st.rerun()
-            
-        st.markdown("### Create New Project Form")
-        lsec("Basic Information")
-        c1,c2 = st.columns(2)
-        with c1:
-            flbl("Document Type *")
-            doc_type = st.selectbox("", doc_types, label_visibility="collapsed", key="f_doctype")
-            
+    # Using an interactive Popover container ensures the form opens cleanly as an overlay 
+    # instead of rendering directly onto the page or stretching the records view
+    with st.popover("➕ Create New Project", use_container_width=True):
+        st.markdown("### New Project Information")
+        
+        doc_type = st.selectbox("Document Type *", doc_types, key="f_doctype")
+        
         with st.form("create_form", clear_on_submit=True):
-            with c2:
-                pass 
-            
-            c1,c2 = st.columns(2)
+            c1, c2 = st.columns(2)
             with c1:
-                flbl("Project Name *")
-                project_name = st.text_input("", placeholder="Enter project name", label_visibility="collapsed", key="f_name")
+                project_name = st.text_input("Project Name *", placeholder="Enter project name", key="f_name")
             with c2:
-                flbl("Control Number")
-                ctrl_no = st.text_input("", placeholder="Leave blank to auto-generate", label_visibility="collapsed", key="f_ctrl")
+                ctrl_no = st.text_input("Control Number Override", placeholder="Leave blank to auto-generate", key="f_ctrl")
             
-            c1,c2 = st.columns(2)
+            c1, c2 = st.columns(2)
             with c1:
-                flbl("Merchant")
-                merchant = st.text_input("", placeholder="Enter merchant name", label_visibility="collapsed", key="f_merchant")
+                merchant = st.text_input("Merchant", placeholder="Enter merchant name", key="f_merchant")
             with c2:
-                flbl("Endorsed By")
-                endorsed_by = st.text_input("", placeholder="Endorser name", label_visibility="collapsed", key="f_endorsed")
+                endorsed_by = st.text_input("Endorsed By", placeholder="Endorser name", key="f_endorsed")
             
-            c1,c2 = st.columns(2)
+            c1, c2 = st.columns(2)
             with c1:
-                flbl("Project Price (PHP)")
-                price = st.number_input("", value=0.0, min_value=0.0, label_visibility="collapsed", key="f_price")
+                price = st.number_input("Project Price (PHP)", value=0.0, min_value=0.0, key="f_price")
             with c2:
                 if doc_type == "CRF":
-                    flbl("Approval Status")
-                    approval_status = st.selectbox("", ["Approved", "Rejected"], label_visibility="collapsed", key="f_approval")
+                    approval_status = st.selectbox("Approval Status", ["Approved", "Rejected"], key="f_approval")
                 else:
                     approval_status = "N/A"
 
-            # Reordered Section: Assignment & Workflow moved above Links
-            st.divider()
             lsec("Assignment & Workflow")
-            c1,c2 = st.columns(2)
+            c1, c2 = st.columns(2)
             with c1:
-                flbl("Assigned BA")
-                assigned_ba = st.selectbox("", ba_list, label_visibility="collapsed", key="f_ba")
+                assigned_ba = st.selectbox("Assigned BA", ba_list, key="f_ba")
+                doc_state = st.selectbox("Document State", doc_states, key="f_docstate")
             with c2:
-                flbl("Tribe")
-                tribe = st.selectbox("", tribes, label_visibility="collapsed", key="f_tribe")
-            c1,c2 = st.columns(2)
-            with c1:
-                flbl("Document State")
-                doc_state = st.selectbox("", doc_states, label_visibility="collapsed", key="f_docstate")
-            with c2:
-                flbl("Project Status")
-                proj_status = st.selectbox("", statuses, label_visibility="collapsed", key="f_status")
+                tribe = st.selectbox("Tribe", tribes, key="f_tribe")
+                proj_status = st.selectbox("Project Status", statuses, key="f_status")
 
-            st.divider()
             lsec("Links")
             lc = st.columns(4)
-            with lc[0]:
-                flbl("CRF")
-                crf_url = st.text_input("", key="f_link_crf", label_visibility="collapsed", placeholder="URL")
-            with lc[1]:
-                flbl("BRF")
-                brf_url = st.text_input("", key="f_link_brf", label_visibility="collapsed", placeholder="URL")
-            with lc[2]:
-                flbl("FEF")
-                fef_url = st.text_input("", key="f_link_fef", label_visibility="collapsed", placeholder="URL")
-            with lc[3]:
-                flbl("Figma")
-                figma_url = st.text_input("", key="f_link_figma", label_visibility="collapsed", placeholder="URL")
+            with lc[0]: crf_url = st.text_input("CRF Link", key="f_link_crf", placeholder="URL")
+            with lc[1]: brf_url = st.text_input("BRF Link", key="f_link_brf", placeholder="URL")
+            with lc[2]: fef_url = st.text_input("FEF Link", key="f_link_fef", placeholder="URL")
+            with lc[3]: figma_url = st.text_input("Figma Link", key="f_link_figma", placeholder="URL")
 
-            st.divider()
             lsec("Endorsement Dates")
-            c1,c2,c3 = st.columns(3)
-            with c1:
-                flbl("Date Endorsed to Commercials")
-                d_commercial = st.date_input("", value=None, label_visibility="collapsed", key="f_dcom")
-            with c2:
-                flbl("Document Expiry Date")
-                d_expiry = st.date_input("", value=None, label_visibility="collapsed", key="f_dexp")
-            with c3:
-                flbl("Date Endorsed to Tech")
-                d_tech = st.date_input("", value=None, label_visibility="collapsed", key="f_dtech")
+            c1, c2, c3 = st.columns(3)
+            with c1: d_commercial = st.date_input("Date Endorsed to Commercials", value=None, key="f_dcom")
+            with c2: d_expiry = st.date_input("Document Expiry Date", value=None, key="f_dexp")
+            with c3: d_tech = st.date_input("Date Endorsed to Tech", value=None, key="f_dtech")
 
-            st.divider()
             lsec("BA & Go-Live Dates")
-            c1,c2,c3 = st.columns(3)
-            with c1:
-                flbl("Date Endorsed to BA")
-                d_ba = st.date_input("", value=None, label_visibility="collapsed", key="f_dba")
-            with c2:
-                flbl("Date Acknowledged by BA")
-                d_ack = st.date_input("", value=None, label_visibility="collapsed", key="f_dack")
-            with c3:
-                flbl("Go Live Date")
-                d_golive = st.date_input("", value=None, label_visibility="collapsed", key="f_golive")
+            c1, c2, c3 = st.columns(3)
+            with c1: d_ba = st.date_input("Date Endorsed to BA", value=None, key="f_dba")
+            with c2: d_ack = st.date_input("Date Acknowledged by BA", value=None, key="f_dack")
+            with c3: d_golive = st.date_input("Go Live Date", value=None, key="f_golive")
 
-            st.divider()
             lsec("Remarks")
-            remarks = st.text_area("", placeholder="Enter any remarks or notes", label_visibility="collapsed", height=80, key="f_remarks")
+            remarks = st.text_area("Remarks / Notes", placeholder="Enter any extra remarks...", height=70, key="f_remarks")
 
-            st.markdown("---")
-            if st.form_submit_button("Submit Project Details", use_container_width=True):
+            if st.form_submit_button("Save Project Data", use_container_width=True):
                 if not project_name:
                     st.error("Project Name is required")
                 else:
-                    # Specialized Custom Control Number Generation
                     year_str = datetime.now().strftime("%Y")
-                    type_seq = sum(1 for p in st.session_state.projects if p.get("Doc Type") == doc_type) + 1
+                    type_seq = sum(1 for p in load_projects() if p.get("Doc Type") == doc_type) + 1
                     
                     if ctrl_no:
                         final_ctrl = ctrl_no
@@ -435,89 +317,45 @@ with tab2:
                             clean_doc = doc_type.upper().replace(" ", "")
                             final_ctrl = f"{clean_doc}-{year_str}-{type_seq:04d}"
 
-                    if ctrl_no and any(p.get("Control Number") == ctrl_no for p in st.session_state.projects):
-                        st.error(f"Control Number '{ctrl_no}' already exists")
-                    else:
-                        links_compiled = []
-                        if crf_url: links_compiled.append(f"CRF: {crf_url}")
-                        if brf_url: links_compiled.append(f"BRF: {brf_url}")
-                        if fef_url: links_compiled.append(f"FEF: {fef_url}")
-                        if figma_url: links_compiled.append(f"Figma: {figma_url}")
+                    links_compiled = []
+                    if crf_url: links_compiled.append(f"CRF: {crf_url}")
+                    if brf_url: links_compiled.append(f"BRF: {brf_url}")
+                    if fef_url: links_compiled.append(f"FEF: {fef_url}")
+                    if figma_url: links_compiled.append(f"Figma: {figma_url}")
 
-                        new_p = {
-                            "ID": datetime.now().isoformat(),
-                            "Doc Type": doc_type, "Project Name": project_name,
-                            "Control Number": final_ctrl, "Merchant": merchant,
-                            "Endorsed By": endorsed_by, "Project Price": price,
-                            "Links": " | ".join(links_compiled),
-                            "Date Endorsed Commercial": str(d_commercial) if d_commercial else "",
-                            "Doc Expiry Date": str(d_expiry) if d_expiry else "",
-                            "Date Endorsed BA": str(d_ba) if d_ba else "",
-                            "Assigned BA": assigned_ba, 
-                            "Date Ack BA": str(d_ack) if d_ack else "",
-                            "Doc State": doc_state, "Tribe": tribe,
-                            "Project Status": proj_status,
-                            "Date Endorsed Tech": str(d_tech) if d_tech else "",
-                            "Go Live Date": str(d_golive) if d_golive else "",
-                            "Approval Status": approval_status,
-                            "Remarks": remarks,
-                            "Created At": datetime.now().isoformat()
-                        }
-                        save_project(new_p)
-                        st.session_state.projects.append(new_p)
-                        st.session_state.show_create_form = False
-                        st.success("Project created and saved to Google Sheets!")
-                        st.rerun()
+                    new_p = {
+                        "ID": datetime.now().isoformat(),
+                        "Doc Type": doc_type, "Project Name": project_name,
+                        "Control Number": final_ctrl, "Merchant": merchant,
+                        "Endorsed By": endorsed_by, "Project Price": price,
+                        "Links": " | ".join(links_compiled),
+                        "Date Endorsed Commercial": str(d_commercial) if d_commercial else "",
+                        "Doc Expiry Date": str(d_expiry) if d_expiry else "",
+                        "Date Endorsed BA": str(d_ba) if d_ba else "",
+                        "Assigned BA": assigned_ba, 
+                        "Date Ack BA": str(d_ack) if d_ack else "",
+                        "Doc State": doc_state, "Tribe": tribe,
+                        "Project Status": proj_status,
+                        "Date Endorsed Tech": str(d_tech) if d_tech else "",
+                        "Go Live Date": str(d_golive) if d_golive else "",
+                        "Approval Status": approval_status,
+                        "Remarks": remarks,
+                        "Created At": datetime.now().isoformat()
+                    }
+                    save_project(new_p)
+                    st.success("Project saved successfully!")
+                    st.rerun()
 
     st.markdown("---")
     
-    # Filter interface updates
     if projects:
         unique_merchants = sorted(list(set(p.get("Merchant") for p in projects if p.get("Merchant"))))
         
-        c1,c2,c3,c4 = st.columns(4)
-        with c1: f_status = st.multiselect("Status", statuses, default=[])
-        with c2: f_tribe  = st.multiselect("Tribe", tribes, default=[])
-        with c3: f_expiry = st.multiselect("Expiry Status", ["Active","Expiring Soon","Expired"], default=[])
-        with c4: f_merchant = st.multiselect("Merchant", unique_merchants, default=[])
+        # Filter Layout Grid
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: f_status = st.multiselect("Filter Status", statuses, default=[])
+        with c2: f_tribe  = st.multiselect("Filter Tribe", tribes, default=[])
+        with c3: f_expiry = st.multiselect("Filter Expiry", ["Active","Expiring Soon","Expired"], default=[])
+        with c4: f_merchant = st.multiselect("Filter Merchant", unique_merchants, default=[])
 
-        filtered = [p for p in projects
-                    if (not f_status or p.get("Project Status") in f_status)
-                    and (not f_tribe  or p.get("Tribe") in f_tribe)
-                    and (not f_expiry or p.get("expiry_status") in f_expiry)
-                    and (not f_merchant or p.get("Merchant") in f_merchant)]
-
-        st.markdown("---")
-        for idx, p in enumerate(filtered):
-            c1,c2 = st.columns([0.87,0.13])
-            with c1:
-                st.markdown(f"### {p.get('Project Name')}")
-                a,b,c,d = st.columns(4)
-                a.write(f"**Control #:** {p.get('Control Number')}")
-                b.write(f"**Merchant:** {p.get('Merchant') or 'N/A'}")
-                c.write(f"**Status:** {p.get('Project Status')}")
-                d.write(f"**Tribe:** {p.get('Tribe')}")
-                a,b,c,d = st.columns(4)
-                a.write(f"**Doc Type:** {p.get('Doc Type')}")
-                b.write(f"**BA:** {p.get('Assigned BA')}")
-                c.write(f"**Price:** PHP {float(p.get('Project Price',0) or 0):,.2f}")
-                d.write(f"**Doc State:** {p.get('Doc State')}")
-                a,b,c,d = st.columns(4)
-                a.write(f"**Go Live:** {p.get('Go Live Date') or 'N/A'}")
-                b.write(f"**Expiry:** {p.get('Doc Expiry Date') or 'N/A'}")
-                c.write(f"**Endorsed By:** {p.get('Endorsed By') or 'N/A'}")
-                if p.get("Doc Type") == "CRF":
-                    d.write(f"**Approval:** {p.get('Approval Status', 'N/A')}")
-                else:
-                    d.write(f"**Expiry Status:** {p.get('expiry_status')}")
-                
-                if p.get("Links"): st.markdown(f"**Links:** {p.get('Links')}")
-                if p.get("Remarks"): st.write(f"**Remarks:** {p.get('Remarks')}")
-            with c2:
-                if st.button("Delete", key=f"del_{idx}", use_container_width=True):
-                    delete_project_row(p.get("ID",""))
-                    st.session_state.projects = load_projects()
-                    st.rerun()
-            st.markdown("---")
-    else:
-        st.info("No projects found matching current filter configuration.")
+        filtered
