@@ -25,7 +25,7 @@ h1,h2,h3 {{color:{RUSH_DARK};}}
 .flbl {{font-weight:600;color:{RUSH_DARK};font-size:13px;margin-bottom:4px;display:block;}}
 div[data-testid="stExpander"] {{border: 1px solid #E5E5E5; border-radius: 4px; margin-bottom: 4px;}}
 
-/* Compact Icon-Free Export Button Link Style */
+/* Compact, Icon-Free Export Link Style */
 .rush-download-link {{
     display: block;
     text-align: center;
@@ -405,7 +405,7 @@ with tab2:
     st.subheader("All Projects Registry")
     projects = load_projects()
     
-    # ── Interceptor Filter Reset State Engine ────────────────────────
+    # Reset Filters Interceptor State Evaluation Block
     if "clear_filters_trigger" in st.session_state and st.session_state.clear_filters_trigger:
         f_search_val = ""
         f_doctype_val = []
@@ -424,10 +424,10 @@ with tab2:
         f_docstate_val = None
         f_pipeline_val = None
 
-    # Enhanced Omni-Search Element (Queries Project Name, Merchant, or Control Number)
+    # Search Element (Project Name, Merchant, or Control Number query mapping block)
     f_search = st.text_input("Search", value=f_search_val, placeholder="Search by Project Name, Merchant, or Control Number...", key="registry_search_bar")
     
-    # ── 6x Multi-select Option Configurations ─────────────────────────
+    # ── 6x Multi-select Filters ──────────────────────────────────────
     c1, c2, c3 = st.columns(3)
     with c1: f_doctype = st.multiselect("Filter by Document Type", doc_types + ["CRF - BRF", "CRF - FEF"], default=f_doctype_val, key="f_dt_sel")
     with c2: f_postatus = st.multiselect("Filter by PO Status", ["Done", "Not Yet Done"], default=f_postatus_val, key="f_po_sel")
@@ -438,7 +438,7 @@ with tab2:
     with c5: f_docstate = st.multiselect("Filter by Document State", doc_states, default=f_docstate_val, key="f_ds_sel")
     with c6: f_pipeline = st.multiselect("Filter by Pipeline Status", statuses, default=f_pipeline_val, key="f_pl_sel")
 
-    # Processing filtering calculations with deep string search evaluation
+    # Processing array filtering parameters
     filtered = []
     for p in projects:
         p_name = str(p.get("Project Name", "")).lower()
@@ -466,14 +466,14 @@ with tab2:
            and (not f_pipeline or p_pipeline in f_pipeline):
             filtered.append(p)
 
-    # Convert matching row elements into working DataFrame matrix data
+    # DataFrame creation configuration mapping logic
     if filtered:
         df_display = pd.DataFrame(filtered)
         df_display["Project Price"] = pd.to_numeric(df_display["Project Price"], errors='coerce').fillna(0.0)
     else:
         df_display = pd.DataFrame(columns=PROJECT_COLS)
 
-    # ── Operational Control Grid Row (Smaller, Emoji-Free Button Link) ──
+    # ── Operational Control Actions ──────────────────────────────────
     c_exp, c_clr = st.columns([0.5, 0.5])
     with c_exp:
         df_export = df_display.copy()
@@ -494,29 +494,28 @@ with tab2:
             
     st.markdown("---")
     
-    # ── High-Performance Native Matrix Display Table View ───────────
+    # ── Static Interactive Table Matrix View ────────────────────────
     if not df_display.empty:
-        # Re-map absolute workspace headers to isolate unique target parameters
         columns_to_show = ["Control Number", "Project Name", "Merchant", "Pipeline Status", "Doc Type", "Project Price", "PO Status", "Project Status"]
         df_table_view = df_display[columns_to_show].copy()
         df_table_view.columns = ["Control #", "Project Name", "Merchant", "Pipeline Status", "Doc Type", "Project Price", "PO Status", "Project Status"]
         
         st.markdown("##### Registry Workspace View")
         
-        # Display static structured matrix grid configuration with internal header sorting disabled
+        # ── 🛠️ FIX: Adjusted unrecognized parameter tokens to fix sort_disabled column configurations ──
         st.dataframe(
             df_table_view,
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Control #": st.column_config.TextColumn("Control #", sortable=False),
-                "Project Name": st.column_config.TextColumn("Project Name", sortable=False),
-                "Merchant": st.column_config.TextColumn("Merchant", sortable=False),
-                "Pipeline Status": st.column_config.TextColumn("Pipeline Status", sortable=False),
-                "Doc Type": st.column_config.TextColumn("Doc Type", sortable=False),
-                "Project Price": st.column_config.NumberColumn("Project Price", format="PHP %,.2f", sortable=False),
-                "PO Status": st.column_config.TextColumn("PO Status", sortable=False),
-                "Project Status": st.column_config.TextColumn("Project Status", sortable=False)
+                "Control #": st.column_config.TextColumn("Control #", sort_disabled=True),
+                "Project Name": st.column_config.TextColumn("Project Name", sort_disabled=True),
+                "Merchant": st.column_config.TextColumn("Merchant", sort_disabled=True),
+                "Pipeline Status": st.column_config.TextColumn("Pipeline Status", sort_disabled=True),
+                "Doc Type": st.column_config.TextColumn("Doc Type", sort_disabled=True),
+                "Project Price": st.column_config.NumberColumn("Project Price", format="PHP %,.2f", sort_disabled=True),
+                "PO Status": st.column_config.TextColumn("PO Status", sort_disabled=True),
+                "Project Status": st.column_config.TextColumn("Project Status", sort_disabled=True)
             }
         )
         
@@ -543,18 +542,18 @@ with tab2:
                 base_parsed_type = "CRF" if raw_stored_type.startswith("CRF") else raw_stored_type
                 extracted_sub = raw_stored_type.split(" - ")[1] if " - " in raw_stored_type else ""
 
-                edit_doc_type = st.selectbox("Document Type *", e_doc_types, index=safe_index(e_doc_types, base_parsed_type), key=f"e_dt_{p_idx}")
+                edit_doc_type = st.selectbox("Document Type *", e_doc_types, index=safe_index(e_doc_types, base_parsed_type), key=f"e_dt_{idx}")
                 
                 edit_crf_subtype = ""
                 if edit_doc_type == "CRF":
-                    edit_crf_subtype = st.selectbox("CRF Type Option", ["", "BRF", "FEF"], index=safe_index(["", "BRF", "FEF"], extracted_sub), key=f"e_crf_sub_{p_idx}")
+                    edit_crf_subtype = st.selectbox("CRF Type Option", ["", "BRF", "FEF"], index=safe_index(["", "BRF", "FEF"], extracted_sub), key=f"e_crf_sub_{idx}")
 
-                edit_name = st.text_input("Project Name *", value=p.get("Project Name"), key=f"e_nm_{p_idx}")
-                edit_ctrl = st.text_input("Control Number", value=p.get("Control Number",""), key=f"e_ctrl_{p_idx}")
-                edit_po = st.selectbox("PO Status", e_po_status, index=safe_index(e_po_status, p.get("PO Status")), key=f"e_po_{p_idx}")
+                edit_name = st.text_input("Project Name *", value=p.get("Project Name"), key=f"e_nm_{idx}")
+                edit_ctrl = st.text_input("Control Number", value=p.get("Control Number",""), key=f"e_ctrl_{idx}")
+                edit_po = st.selectbox("PO Status", e_po_status, index=safe_index(e_po_status, p.get("PO Status")), key=f"e_po_{idx}")
                 
-                edit_merchant = st.text_input("Merchant", value=p.get("Merchant"), key=f"e_mer_{p_idx}")
-                edit_endorsed = st.text_input("Endorsed By", value=p.get("Endorsed By"), key=f"e_end_{p_idx}")
+                edit_merchant = st.text_input("Merchant", value=p.get("Merchant"), key=f"e_mer_{idx}")
+                edit_endorsed = st.text_input("Endorsed By", value=p.get("Endorsed By"), key=f"e_end_{idx}")
                 
                 def parse_date_safely(d_str):
                     try:
@@ -562,8 +561,8 @@ with tab2:
                     except:
                         return None
 
-                edit_d_prod = st.date_input("Date Endorsed to Product", value=parse_date_safely(p.get("Date Endorsed Product")), key=f"e_dprod_{p_idx}")
-                edit_price = st.number_input("Price (PHP)", value=float(p.get('Project Price', 0) or 0), min_value=0.0, key=f"e_pr_{p_idx}")
+                edit_d_prod = st.date_input("Date Endorsed to Product", value=parse_date_safely(p.get("Date Endorsed Product")), key=f"e_dprod_{idx}")
+                edit_price = st.number_input("Price (PHP)", value=float(p.get('Project Price', 0) or 0), min_value=0.0, key=f"e_pr_{idx}")
                 
                 edit_approval = "N/A"
                 edit_reason = ""
@@ -572,33 +571,33 @@ with tab2:
                 ed_exp = ""
                 
                 if edit_doc_type in ["CRF", "BRF", "FEF"]:
-                    edit_approval = st.selectbox("Project Status", e_project_statuses, index=safe_index(e_project_statuses, p.get("Project Status")), key=f"e_app_{p_idx}")
+                    edit_approval = st.selectbox("Project Status", e_project_statuses, index=safe_index(e_project_statuses, p.get("Project Status")), key=f"e_app_{idx}")
                     if edit_approval == "Rejected":
-                        edit_reason = st.text_input("Reason for Rejection *", value=p.get("Reason for Rejection", ""), key=f"e_reas_{p_idx}")
-                        edit_rej_person = st.text_input("Rejector *", value=p.get("Rejector", ""), key=f"e_rejctr_{p_idx}")
+                        edit_reason = st.text_input("Reason for Rejection *", value=p.get("Reason for Rejection", ""), key=f"e_reas_{idx}")
+                        edit_rej_person = st.text_input("Rejector *", value=p.get("Rejector", ""), key=f"e_rejctr_{idx}")
 
                 if edit_doc_type == "CRF":
                     lsec("Commercial Timeline")
-                    ed_com = st.date_input("Date Endorsed to Commercials", value=parse_date_safely(p.get("Date Endorsed Commercial")), key=f"ed_com_{p_idx}")
-                    ed_exp = st.date_input("Document Expiry Date", value=parse_date_safely(p.get("Doc Expiry Date")), key=f"ed_exp_{p_idx}")
+                    ed_com = st.date_input("Date Endorsed to Commercials", value=parse_date_safely(p.get("Date Endorsed Commercial")), key=f"ed_com_{idx}")
+                    ed_exp = st.date_input("Document Expiry Date", value=parse_date_safely(p.get("Doc Expiry Date")), key=f"ed_exp_{idx}")
 
                 lsec("BA Assignment & Workflow")
-                ed_ba = st.date_input("Date Endorsed to BA", value=parse_date_safely(p.get("Date Endorsed BA")), key=f"ed_ba_{p_idx}")
-                ed_ack = st.date_input("Date Acknowledged by BA", value=parse_date_safely(p.get("Date Ack BA")), key=f"ed_ack_{p_idx}")
+                ed_ba = st.date_input("Date Endorsed to BA", value=parse_date_safely(p.get("Date Endorsed BA")), key=f"ed_ba_{idx}")
+                ed_ack = st.date_input("Date Acknowledged by BA", value=parse_date_safely(p.get("Date Ack BA")), key=f"ed_ack_{idx}")
                 
-                edit_ba = st.selectbox("Assigned BA", e_ba_list, index=safe_index(e_ba_list, p.get("Assigned BA")), key=f"e_ba_{p_idx}")
-                edit_doc_state = st.selectbox("Document State", e_doc_states, index=safe_index(e_doc_states, p.get("Doc State")), key=f"e_ds_{p_idx}")
+                edit_ba = st.selectbox("Assigned BA", e_ba_list, index=safe_index(e_ba_list, p.get("Assigned BA")), key=f"e_ba_{idx}")
+                edit_doc_state = st.selectbox("Document State", e_doc_states, index=safe_index(e_doc_states, p.get("Doc State")), key=f"e_ds_{idx}")
                 
                 lsec("Tribe & Sprint Parameters")
-                edit_tribe = st.selectbox("Tribe", e_tribes, index=safe_index(e_tribes, p.get("Tribe")), key=f"e_tr_{p_idx}")
-                edit_sprint = st.text_input("Sprint", value=p.get("Sprint",""), key=f"e_sp_{p_idx}")
+                edit_tribe = st.selectbox("Tribe", e_tribes, index=safe_index(e_tribes, p.get("Tribe")), key=f"e_tr_{idx}")
+                edit_sprint = st.text_input("Sprint", value=p.get("Sprint",""), key=f"e_sp_{idx}")
                 
                 lsec("Tech Timeline & Status")
-                ed_tech = st.date_input("Date Endorsed to Tech", value=parse_date_safely(p.get("Date Endorsed Tech")), key=f"ed_tech_{p_idx}")
-                ed_go = st.date_input("Go Live Date", value=parse_date_safely(p.get("Go Live Date")), key=f"ed_go_{p_idx}")
-                edit_status = st.selectbox("Pipeline Status", e_statuses, index=safe_index(e_statuses, p.get("Pipeline Status")), key=f"e_st_{p_idx}")
+                ed_tech = st.date_input("Date Endorsed to Tech", value=parse_date_safely(p.get("Date Endorsed Tech")), key=f"ed_tech_{idx}")
+                ed_go = st.date_input("Go Live Date", value=parse_date_safely(p.get("Go Live Date")), key=f"ed_go_{idx}")
+                edit_status = st.selectbox("Pipeline Status", e_statuses, index=safe_index(e_statuses, p.get("Pipeline Status")), key=f"e_st_{idx}")
                 
-                edit_remarks = st.text_area("Remarks", value=p.get("Remarks"), key=f"e_rem_{p_idx}")
+                edit_remarks = st.text_area("Remarks", value=p.get("Remarks"), key=f"e_rem_{idx}")
                 
                 c_sav, c_del = st.columns(2)
                 with c_sav:
