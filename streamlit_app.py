@@ -30,8 +30,6 @@ st.title("RUSH Project Tracker")
 # ── Google Sheets Hardened Write Connection Engine ───────────────
 SHEET_ID   = st.secrets["GOOGLE_SHEETS_ID"]
 SA_CREDS   = st.secrets["service_account"]
-
-# FIXED: Replaced legacy deprecated scopes with standard drive/spreadsheet endpoints
 SCOPE      = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
@@ -55,7 +53,6 @@ def get_sheet(tab):
     try:
         return sh.worksheet(tab)
     except gspread.exceptions.WorksheetNotFound:
-        # FIXED: Only create sheet if explicitly not found to prevent silent permission crashes
         ws = sh.add_worksheet(tab, rows=1000, cols=33)
         if tab == "Projects":
             ws.append_row(PROJECT_COLS)
@@ -67,7 +64,21 @@ def get_sheet(tab):
 def load_projects():
     try:
         ws = get_sheet("Projects")
-        records = ws.get_all_records()
+        # FIXED: Using get_all_values() instead of get_all_records() to avoid duplicate header errors
+        raw_rows = ws.get_all_values()
+        if not raw_rows or len(raw_rows) < 2:
+            return []
+            
+        records = []
+        # Safely map rows to our strict internal PROJECT_COLS definition
+        for row in raw_rows[1:]:
+            record = {}
+            for idx, col_name in enumerate(PROJECT_COLS):
+                if idx < len(row):
+                    record[col_name] = row[idx]
+                else:
+                    record[col_name] = ""
+            records.append(record)
         return records
     except Exception as e:
         st.error(f"Failed to fetch data from sheet: {e}")
@@ -80,7 +91,6 @@ def save_project(p):
         load_projects.clear()
         return True
     except Exception as e:
-        # FIXED: Catching and outputting explicit write errors on screen
         st.error(f"Google Sheets Save Error: {e}")
         return False
 
@@ -90,7 +100,6 @@ def update_project_row(project_id, updated_p):
         cell = ws.find(project_id)
         if cell:
             row_values = [str(updated_p.get(c, "")) for c in PROJECT_COLS]
-            # FIXED: Converted keyword parameters to clear positional list parameters for v6+ compatibility
             ws.update(f"A{cell.row}:W{cell.row}", [row_values])
         load_projects.clear()
         return True
@@ -112,10 +121,21 @@ def delete_project_row(project_id):
 def load_settings():
     try:
         ws = get_sheet("Settings")
-        records = ws.get_all_records()
+        # FIXED: Handled settings records decoding through get_all_values to keep parser stable
+        raw_rows = ws.get_all_values()
+        if not raw_rows or len(raw_rows) < 2:
+            return {}
+            
         result = {}
-        for r in records:
-            result[r["key"]] = json.loads(r["value"]) if r.get("value") else []
+        for row in raw_rows[1:]:
+            if len(row) >= 2:
+                key_val = row[0]
+                json_val = row[1]
+                if key_val:
+                    try:
+                        result[key_val] = json.loads(json_val) if json_val else []
+                    except:
+                        result[key_val] = []
         return result
     except:
         return {}
@@ -246,7 +266,6 @@ with tab1:
         else:
             approval_status = "N/A"
 
-        # Grouped Pair 1: Commercial Timeline (CRF Exclusive Visibility)
         if doc_type == "CRF":
             lsec("Commercial Timeline")
             g1_left, g1_right = st.columns(2)
@@ -255,7 +274,6 @@ with tab1:
         else:
             d_commercial, d_expiry = "", ""
 
-        # Grouped Pair 2: BA Timelines positioned above selectors
         lsec("BA Assignment & Workflow")
         g2_left, g2_right = st.columns(2)
         with g2_left: d_ba = st.date_input("Date Endorsed to BA", value=None, key="f_dba")
@@ -267,7 +285,6 @@ with tab1:
         with c2:
             doc_state = st.selectbox("Document State", placeholder_doc_states, index=0, key="f_docstate")
 
-        # Tribe and Sprint Unified Configuration Area
         lsec("Tribe & Sprint Parameters")
         c1, c2 = st.columns(2)
         with c1:
@@ -275,7 +292,6 @@ with tab1:
         with c2:
             sprint = st.text_input("Sprint (Optional)", placeholder="e.g., Sprint 42", key="f_sprint")
 
-        # Grouped Pair 3: Tech Timelines
         lsec("Tech Timeline & Status")
         g3_left, g3_right = st.columns(2)
         with g3_left: d_tech = st.date_input("Date Endorsed to Tech", value=None, key="f_dtech")
@@ -341,7 +357,6 @@ with tab1:
                     "Remarks": remarks,
                     "Created At": datetime.now().isoformat()
                 }
-                # FIXED: Verified feedback loop check logic before performing view refreshes
                 if save_project(new_p):
                     st.success("Project added successfully!")
                     st.rerun()
@@ -372,7 +387,6 @@ with tab2:
 
         st.markdown("---")
         
-        # Consistent Matrix Grid Headers
         th1, th2, th3, th4, th5, th6, th7, th8 = st.columns([1.5, 2.0, 1.3, 1.2, 1.2, 1.0, 1.8, 1.2])
         th1.markdown("**Control #**")
         th2.markdown("**Project Name**")
@@ -402,7 +416,6 @@ with tab2:
                 
             r7.write(" | ".join(detail_items))
             
-            # Action Column Grouping: Edit & Delete Elements
             with r8:
                 with st.popover("Edit", use_container_width=True):
                     st.markdown(f"### Edit Row: {p.get('Control Number')}")
@@ -511,7 +524,7 @@ with tab2:
     else:
         st.info("No projects match your registry search query or active filter configurations.")
 
-# ── Tab 3: Dashboard Analytics (Terminal Tab View) ───────────────
+# ── Tab 3: Dashboard Analytics ────────────────────────────────────
 with tab3:
     st.subheader("Project Dashboard Metrics")
     projects = tag_expiry(load_projects())
