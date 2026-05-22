@@ -242,7 +242,7 @@ tribes           = s.get("tribes", DEFAULT_SETTINGS["tribes"])
 statuses         = s.get("statuses", DEFAULT_SETTINGS["statuses"])
 project_statuses = s.get("project_statuses", DEFAULT_SETTINGS["project_statuses"])
 
-# ── Tabs Navigation Architecture (Removed Dashboard Tab) ──────────
+# ── Tabs Navigation Architecture (Analytics Removed) ──────────────────────
 tab1, tab2 = st.tabs(["📊 Create Project", "📋 All Projects Workspace"])
 
 def lsec(t): st.markdown(f'<p class="lsec">{t}</p>', unsafe_allow_html=True)
@@ -381,15 +381,15 @@ with tab1:
                 st.session_state.toast_notification = "Project saved successfully!"
                 st.rerun()
 
-# ── Tab 2: All Projects Registry View (Enhanced Filters & Export Added) ──
+# ── Tab 2: All Projects Registry View ──
 with tab2:
     st.subheader("All Projects Registry")
     projects = load_projects()
     
     if projects:
-        f_search = st.text_input("Global Search by Project Name", placeholder="Type project name to live-filter standard registry layout...", key="registry_search_bar")
+        f_search = st.text_input("Global Search by Project Name", placeholder="Type project name to filter...", key="registry_search_bar")
         
-        # ── Refactored Explicit Filtering Array Grid ────────────────────
+        # ── Refactored 6x Dimension Filter Row Config ────────────────────
         c1, c2, c3 = st.columns(3)
         with c1: f_doctype = st.multiselect("Filter by Document Type", doc_types + ["CRF - BRF", "CRF - FEF"])
         with c2: f_postatus = st.multiselect("Filter by PO Status", ["Done", "Not Yet Done"])
@@ -400,10 +400,9 @@ with tab2:
         with c5: f_docstate = st.multiselect("Filter by Document State", doc_states)
         with c6: f_pipeline = st.multiselect("Filter by Pipeline Status", statuses)
 
-        # Unified Filter Evaluation Processor Engine
+        # Processing loop filtering operations
         filtered = []
         for p in projects:
-            # Parse logical base strings for advanced dynamic matching checks
             p_doc_type = str(p.get("Doc Type", ""))
             p_po_status = str(p.get("PO Status", ""))
             p_proj_status = str(p.get("Project Status", ""))
@@ -420,11 +419,11 @@ with tab2:
                and (not f_pipeline or p_pipeline in f_pipeline):
                 filtered.append(p)
 
-        # ── Native CSV Export Engine Attachment ───────────────────────
-        if filtered:
+        # ── Safe Data Exporter Interface Matrix ───────────────────────
+        if len(filtered) > 0:
             df_export = pd.DataFrame(filtered)
-            # Remove system internal IDs and creation markers to clean up the exported file
-            if "ID" in df_export.columns: df_export = df_export.drop(columns=["ID"])
+            if "ID" in df_export.columns: 
+                df_export = df_export.drop(columns=["ID"])
             
             csv_data = df_export.to_csv(index=False).encode('utf-8')
             
@@ -435,10 +434,12 @@ with tab2:
                 mime="text/csv",
                 use_container_width=True
             )
+        else:
+            st.button("📥 Export Current Filtered Dataset to CSV", disabled=True, use_container_width=True, help="No data matching current filters to export.")
         
         st.markdown("---")
         
-        # ── Matrix Core Header Layout Render ───────────────────────────
+        # Grid structural headers
         th1, th2, th3, th4, th5, th6, th7, th8 = st.columns([1.5, 2.0, 1.3, 1.2, 1.2, 1.0, 1.8, 1.2])
         th1.markdown("**Control #**")
         th2.markdown("**Project Name**")
@@ -512,7 +513,7 @@ with tab2:
                     edit_d_prod = st.date_input("Date Endorsed to Product", value=parse_date_safely(p.get("Date Endorsed Product")), key=f"e_dprod_{idx}")
                     edit_price = st.number_input("Price (PHP)", value=price_val, min_value=0.0, key=f"e_pr_{idx}")
                     
-                    # --- SAFE EDIT VARIABLES INITIALIZATION ---
+                    # Safe fallbacks mapping config
                     edit_approval = "N/A"
                     edit_reason = ""
                     edit_rej_person = ""
