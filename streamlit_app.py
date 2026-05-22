@@ -1,7 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -244,25 +242,11 @@ tribes           = s.get("tribes", DEFAULT_SETTINGS["tribes"])
 statuses         = s.get("statuses", DEFAULT_SETTINGS["statuses"])
 project_statuses = s.get("project_statuses", DEFAULT_SETTINGS["project_statuses"])
 
-# ── Tabs Navigation Architecture ──────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["📊 Create Project", "📋 All Projects", "📈 Analytics Dashboard"])
+# ── Tabs Navigation Architecture (Removed Dashboard Tab) ──────────
+tab1, tab2 = st.tabs(["📊 Create Project", "📋 All Projects Workspace"])
 
 def lsec(t): st.markdown(f'<p class="lsec">{t}</p>', unsafe_allow_html=True)
 def flbl(t): st.markdown(f'<span class="flbl">{t}</span>', unsafe_allow_html=True)
-
-def tag_expiry(projects_list):
-    today = datetime.now().date()
-    for p in projects_list:
-        try:
-            exp_val = p.get("Doc Expiry Date","")
-            if exp_val and exp_val not in ["None", ""]:
-                exp = datetime.strptime(str(exp_val), "%Y-%m-%d").date()
-                p["expiry_status"] = "Expired" if exp < today else ("Expiring Soon" if (exp-today).days<=7 else "Active")
-            else:
-                p["expiry_status"] = "Active"
-        except:
-            p["expiry_status"] = "Active"
-    return projects_list
 
 def safe_index(options, value):
     try:
@@ -285,7 +269,6 @@ with tab1:
 
     doc_type = st.selectbox("Document Type *", placeholder_doc_types, index=0, key=f"f_doctype_{fid}")
     
-    # --- SAFE INITIALIZATION PATTERN (TAB 1) ---
     crf_subtype = ""
     project_status = "N/A"
     reason_for_rejection = ""
@@ -398,33 +381,64 @@ with tab1:
                 st.session_state.toast_notification = "Project saved successfully!"
                 st.rerun()
 
-# ── Tab 2: All Projects Registry View ──
+# ── Tab 2: All Projects Registry View (Enhanced Filters & Export Added) ──
 with tab2:
     st.subheader("All Projects Registry")
-    projects = tag_expiry(load_projects())
+    projects = load_projects()
     
     if projects:
-        df_proj = pd.DataFrame(projects)
-        unique_merchants = sorted(df_proj["Merchant"].dropna().unique().tolist()) if "Merchant" in df_proj.columns else []
-        unique_merchants = [m for m in unique_merchants if str(m).strip() != ""]
+        f_search = st.text_input("Global Search by Project Name", placeholder="Type project name to live-filter standard registry layout...", key="registry_search_bar")
         
-        f_search = st.text_input("Search Project Name", placeholder="Type project name to filter standard registry list...")
+        # ── Refactored Explicit Filtering Array Grid ────────────────────
+        c1, c2, c3 = st.columns(3)
+        with c1: f_doctype = st.multiselect("Filter by Document Type", doc_types + ["CRF - BRF", "CRF - FEF"])
+        with c2: f_postatus = st.multiselect("Filter by PO Status", ["Done", "Not Yet Done"])
+        with c3: f_projstatus = st.multiselect("Filter by Project Status", project_statuses + ["N/A"])
         
-        c1, c2, c3, c4 = st.columns(4)
-        with c1: f_status = st.multiselect("Filter Pipeline Status", statuses)
-        with c2: f_tribe  = st.multiselect("Filter Tribe", tribes)
-        with c3: f_expiry = st.multiselect("Filter Expiry Status", ["Active","Expiring Soon","Expired"])
-        with c4: f_merchant = st.multiselect("Filter Merchant", unique_merchants)
+        c4, c5, c6 = st.columns(3)
+        with c4: f_ba = st.multiselect("Filter by Assigned BA", ba_list)
+        with c5: f_docstate = st.multiselect("Filter by Document State", doc_states)
+        with c6: f_pipeline = st.multiselect("Filter by Pipeline Status", statuses)
 
-        filtered = [p for p in projects
-                    if (not f_search or f_search.lower() in str(p.get("Project Name","")).lower())
-                    and (not f_status or p.get("Pipeline Status") in f_status)
-                    and (not f_tribe  or p.get("Tribe") in f_tribe)
-                    and (not f_expiry or p.get("expiry_status") in f_expiry)
-                    and (not f_merchant or p.get("Merchant") in f_merchant)]
+        # Unified Filter Evaluation Processor Engine
+        filtered = []
+        for p in projects:
+            # Parse logical base strings for advanced dynamic matching checks
+            p_doc_type = str(p.get("Doc Type", ""))
+            p_po_status = str(p.get("PO Status", ""))
+            p_proj_status = str(p.get("Project Status", ""))
+            p_assigned_ba = str(p.get("Assigned BA", ""))
+            p_doc_state = str(p.get("Doc State", ""))
+            p_pipeline = str(p.get("Pipeline Status", ""))
+            
+            if (not f_search or f_search.lower() in str(p.get("Project Name","")).lower()) \
+               and (not f_doctype or any(f in p_doc_type for f in f_doctype)) \
+               and (not f_postatus or p_po_status in f_postatus) \
+               and (not f_projstatus or p_proj_status in f_projstatus) \
+               and (not f_ba or p_assigned_ba in f_ba) \
+               and (not f_docstate or p_doc_state in f_docstate) \
+               and (not f_pipeline or p_pipeline in f_pipeline):
+                filtered.append(p)
 
+        # ── Native CSV Export Engine Attachment ───────────────────────
+        if filtered:
+            df_export = pd.DataFrame(filtered)
+            # Remove system internal IDs and creation markers to clean up the exported file
+            if "ID" in df_export.columns: df_export = df_export.drop(columns=["ID"])
+            
+            csv_data = df_export.to_csv(index=False).encode('utf-8')
+            
+            st.download_button(
+                label="📥 Export Current Filtered Dataset to CSV",
+                data=csv_data,
+                fileName=f"RUSH_Filtered_Projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        
         st.markdown("---")
         
+        # ── Matrix Core Header Layout Render ───────────────────────────
         th1, th2, th3, th4, th5, th6, th7, th8 = st.columns([1.5, 2.0, 1.3, 1.2, 1.2, 1.0, 1.8, 1.2])
         th1.markdown("**Control #**")
         th2.markdown("**Project Name**")
@@ -498,7 +512,7 @@ with tab2:
                     edit_d_prod = st.date_input("Date Endorsed to Product", value=parse_date_safely(p.get("Date Endorsed Product")), key=f"e_dprod_{idx}")
                     edit_price = st.number_input("Price (PHP)", value=price_val, min_value=0.0, key=f"e_pr_{idx}")
                     
-                    # --- SAFE INITIALIZATION PATTERN (TAB 2 EDIT MATRIX) ---
+                    # --- SAFE EDIT VARIABLES INITIALIZATION ---
                     edit_approval = "N/A"
                     edit_reason = ""
                     edit_rej_person = ""
@@ -507,7 +521,6 @@ with tab2:
                     
                     if edit_doc_type in ["CRF", "BRF", "FEF"]:
                         edit_approval = st.selectbox("Project Status", e_project_statuses, index=safe_index(e_project_statuses, p.get("Project Status")), key=f"e_app_{idx}")
-                        
                         if edit_approval == "Rejected":
                             edit_reason = st.text_input("Reason for Rejection *", value=p.get("Reason for Rejection", ""), key=f"e_reas_{idx}")
                             edit_rej_person = st.text_input("Rejector *", value=p.get("Rejector", ""), key=f"e_rejctr_{idx}")
@@ -572,67 +585,3 @@ with tab2:
             st.markdown("<hr style='margin:6px 0px; border-top: 1px solid #E5E5E5;' />", unsafe_allow_html=True)
     else:
         st.info("No projects match your registry search query or active filter configurations.")
-
-# ── Tab 3: Dashboard Analytics ──
-with tab3:
-    st.subheader("Project Dashboard Metrics")
-    projects = tag_expiry(load_projects())
-
-    if projects:
-        total       = len(projects)
-        in_progress = sum(1 for p in projects if p.get("Pipeline Status")=="In Progress")
-        live        = sum(1 for p in projects if p.get("Pipeline Status")=="Live")
-        on_hold     = sum(1 for p in projects if p.get("Pipeline Status")=="On Hold")
-        expired     = sum(1 for p in projects if p.get("expiry_status")=="Expired")
-        exp_soon    = sum(1 for p in projects if p.get("expiry_status")=="Expiring Soon")
-
-        c1,c2,c3,c4,c5,c6 = st.columns(6)
-        c1.metric("Total", total)
-        c2.metric("In Progress", in_progress)
-        c3.metric("Live", live)
-        c4.metric("On Hold", on_hold)
-        c5.metric("Expired", expired)
-        c6.metric("Expiring Soon", exp_soon)
-
-        st.markdown("---")
-        st.subheader("Project Pipeline Volumetric Flow")
-        status_order = ["Backlog", "In Progress", "In Review", "Testing", "Ready to Launch", "Live", "Completed"]
-        status_counts = {stage: sum(1 for p in projects if p.get("Pipeline Status") == stage) for stage in status_order}
-        
-        fig_funnel = go.Figure(go.Funnel(
-            y=list(status_counts.keys()),
-            x=list(status_counts.values()),
-            marker={"color": [RUSH_GREY, RUSH_ORANGE, RUSH_YELLOW, RUSH_TEAL, RUSH_TEAL, RUSH_ORANGE, RUSH_GREY]},
-            textinfo="value+percent initial"
-        ))
-        fig_funnel.update_layout(paper_bgcolor=RUSH_WHITE, plot_bgcolor=RUSH_WHITE, font=dict(color=RUSH_DARK), margin=dict(l=40, r=40, t=40, b=40))
-        st.plotly_chart(fig_funnel, use_container_width=True)
-        
-        st.markdown("---")
-        st.subheader("Individual Project Milestone Tracking")
-        selected_p_name = st.selectbox("Select a project to view timelines:", [p.get("Project Name") for p in projects])
-        
-        if selected_p_name:
-            p_data = next(p for p in projects if p.get("Project Name") == selected_p_name)
-            milestones = {
-                "Commercial Endorsement": p_data.get("Date Endorsed Commercial"),
-                "Product Endorsement": p_data.get("Date Endorsed Product"),
-                "Tech Endorsement": p_data.get("Date Endorsed Tech"),
-                "BA Endorsement": p_data.get("Date Endorsed BA"),
-                "BA Acknowledgement": p_data.get("Date Ack BA"),
-                "Go Live Date": p_data.get("Go Live Date")
-            }
-            
-            ms_cols = st.columns(len(milestones))
-            for idx, (ms_name, ms_date) in enumerate(milestones.items()):
-                with ms_cols[idx]:
-                    is_complete = ms_date and ms_date not in ["None", ""]
-                    status_box = f"Completed<br>`{ms_date}`" if is_complete else "Pending"
-                    st.markdown(f"""
-                    <div style="border: 1px solid {RUSH_GREY}; padding: 12px; border-radius: 6px; background-color: {RUSH_WHITE}; text-align: center;">
-                        <span style="font-size: 13px; font-weight: 600; color: {RUSH_DARK};">{ms_name}</span><br>
-                        <span style="font-size: 14px; margin-top: 6px; display: inline-block;">{status_box}</span>
-                    </div>
-                    """, unsafe_allow_html=True)
-    else:
-        st.info("No records are currently stored inside the spreadsheet system.")
