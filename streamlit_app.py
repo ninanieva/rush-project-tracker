@@ -285,8 +285,7 @@ with tab1:
 
     doc_type = st.selectbox("Document Type *", placeholder_doc_types, index=0, key=f"f_doctype_{fid}")
     
-    # --- SAFE INITIALIZATION OF ALL CONDITIONAL FIELDS ---
-    # This guarantees the variables exist even if the fields are hidden!
+    # --- SAFE INITIALIZATION PATTERN (TAB 1) ---
     crf_subtype = ""
     project_status = "N/A"
     reason_for_rejection = ""
@@ -312,11 +311,9 @@ with tab1:
     c1, c2 = st.columns(2)
     with c1: price = st.number_input("Project Price (PHP)", value=0.0, min_value=0.0, key=f"f_price_{fid}")
     with c2: 
-        # Only show project status for specific document types
         if doc_type in ["CRF", "BRF", "FEF"]:
             project_status = st.selectbox("Project Status", placeholder_project_statuses, index=0, key=f"f_project_status_{fid}")
 
-    # Only show rejection fields if Project Status is explicitly set to Rejected
     if doc_type in ["CRF", "BRF", "FEF"] and project_status == "Rejected":
         c1, c2 = st.columns(2)
         with c1: reason_for_rejection = st.text_input("Reason for Rejection *", placeholder="State rejection logic", key=f"f_reason_rejection_{fid}")
@@ -327,6 +324,79 @@ with tab1:
         g1_left, g1_right = st.columns(2)
         with g1_left: d_commercial = st.date_input("Date Endorsed to Commercials", value=None, key=f"f_dcom_{fid}")
         with g1_right: d_expiry = st.date_input("Document Expiry Date", value=None, key=f"f_dexp_{fid}")
+
+    lsec("BA Assignment & Workflow")
+    g2_left, g2_right = st.columns(2)
+    with g2_left: d_ba = st.date_input("Date Endorsed to BA", value=None, key=f"f_dba_{fid}")
+    with g2_right: d_ack = st.date_input("Date Acknowledged by BA", value=None, key=f"f_dack_{fid}")
+
+    c1, c2 = st.columns(2)
+    with c1: assigned_ba = st.selectbox("Assigned BA", placeholder_ba_list, index=0, key=f"f_ba_{fid}")
+    with c2: doc_state = st.selectbox("Document State", placeholder_doc_states, index=0, key=f"f_docstate_{fid}")
+
+    lsec("Tribe & Sprint Parameters")
+    c1, c2 = st.columns(2)
+    with c1: tribe = st.selectbox("Tribe", placeholder_tribes, index=0, key=f"f_tribe_{fid}")
+    with c2: sprint = st.text_input("Sprint (Optional)", placeholder="e.g., Sprint 42", key=f"f_sprint_{fid}")
+
+    lsec("Tech Timeline & Status")
+    g3_left, g3_right = st.columns(2)
+    with g3_left: d_tech = st.date_input("Date Endorsed to Tech", value=None, key=f"f_dtech_{fid}")
+    with g3_right: d_golive = st.date_input("Go Live Date", value=None, key=f"f_golive_{fid}")
+        
+    pipeline_status = st.selectbox("Pipeline Status", placeholder_statuses, index=0, key=f"f_status_{fid}")
+
+    lsec("Links Matrix")
+    lc = st.columns(4)
+    with lc[0]: crf_url = st.text_input("CRF Link", key=f"f_link_crf_{fid}", placeholder="URL")
+    with lc[1]: brf_url = st.text_input("BRF Link", key=f"f_link_brf_{fid}", placeholder="URL")
+    with lc[2]: fef_url = st.text_input("FEF Link", key=f"f_link_fef_{fid}", placeholder="URL")
+    with lc[3]: figma_url = st.text_input("Figma Link", key=f"f_link_figma_{fid}", placeholder="URL")
+
+    lsec("Remarks")
+    remarks = st.text_area("Remarks / Notes", placeholder="Enter remarks...", height=70, key=f"f_remarks_{fid}")
+
+    st.markdown("---")
+    if st.button("Save Project Data", use_container_width=True, type="primary"):
+        if not project_name or doc_type == "":
+            st.error("Document Type and Project Name are mandatory fields.")
+        elif project_status == "Rejected" and (not reason_for_rejection or not rejector):
+            st.error("Reason for Rejection and Rejector are required fields when status is marked 'Rejected'.")
+        else:
+            links_compiled = []
+            if crf_url: links_compiled.append(f"CRF: {crf_url}")
+            if brf_url: links_compiled.append(f"BRF: {brf_url}")
+            if fef_url: links_compiled.append(f"FEF: {fef_url}")
+            if figma_url: links_compiled.append(f"Figma: {figma_url}")
+
+            final_saved_doc_type = f"CRF - {crf_subtype}" if (doc_type == "CRF" and crf_subtype) else doc_type
+
+            new_p = {
+                "ID": datetime.now().isoformat(),
+                "Doc Type": final_saved_doc_type, "Project Name": project_name,
+                "Control Number": ctrl_no if ctrl_no else "N/A", "PO Status": po_status, "Merchant": merchant,
+                "Endorsed By": endorsed_by, 
+                "Date Endorsed Product": str(d_product) if d_product else "",
+                "Project Price": price,
+                "Links": " | ".join(links_compiled),
+                "Date Endorsed Commercial": str(d_commercial) if d_commercial else "",
+                "Doc Expiry Date": str(d_expiry) if d_expiry else "",
+                "Date Endorsed BA": str(d_ba) if d_ba else "", "Assigned BA": assigned_ba, 
+                "Date Ack BA": str(d_ack) if d_ack else "",
+                "Doc State": doc_state, "Tribe": tribe, "Sprint": sprint,
+                "Pipeline Status": pipeline_status,
+                "Date Endorsed Tech": str(d_tech) if d_tech else "",
+                "Go Live Date": str(d_golive) if d_golive else "",
+                "Project Status": project_status,
+                "Reason for Rejection": reason_for_rejection,
+                "Rejector": rejector,
+                "Remarks": remarks,
+                "Created At": datetime.now().isoformat()
+            }
+            if save_project(new_p):
+                st.session_state.form_id += 1 
+                st.session_state.toast_notification = "Project saved successfully!"
+                st.rerun()
 
 # ── Tab 2: All Projects Registry View ──
 with tab2:
@@ -428,9 +498,12 @@ with tab2:
                     edit_d_prod = st.date_input("Date Endorsed to Product", value=parse_date_safely(p.get("Date Endorsed Product")), key=f"e_dprod_{idx}")
                     edit_price = st.number_input("Price (PHP)", value=price_val, min_value=0.0, key=f"e_pr_{idx}")
                     
+                    # --- SAFE INITIALIZATION PATTERN (TAB 2 EDIT MATRIX) ---
                     edit_approval = "N/A"
                     edit_reason = ""
                     edit_rej_person = ""
+                    ed_com = ""
+                    ed_exp = ""
                     
                     if edit_doc_type in ["CRF", "BRF", "FEF"]:
                         edit_approval = st.selectbox("Project Status", e_project_statuses, index=safe_index(e_project_statuses, p.get("Project Status")), key=f"e_app_{idx}")
@@ -443,8 +516,6 @@ with tab2:
                         lsec("Commercial Timeline")
                         ed_com = st.date_input("Date Endorsed to Commercials", value=parse_date_safely(p.get("Date Endorsed Commercial")), key=f"ed_com_{idx}")
                         ed_exp = st.date_input("Document Expiry Date", value=parse_date_safely(p.get("Doc Expiry Date")), key=f"ed_exp_{idx}")
-                    else:
-                        ed_com, ed_exp = "", ""
 
                     lsec("BA Assignment & Workflow")
                     ed_ba = st.date_input("Date Endorsed to BA", value=parse_date_safely(p.get("Date Endorsed BA")), key=f"ed_ba_{idx}")
