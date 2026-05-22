@@ -4,7 +4,7 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
-import base64  # Standard Python module for safe file string encoding
+import base64
 
 # ── Design System Color Variables ────────────────────────────────
 RUSH_ORANGE = "#FF6B00"
@@ -24,17 +24,20 @@ h1,h2,h3 {{color:{RUSH_DARK};}}
 .lsec {{font-weight:700;font-size:15px;color:{RUSH_ORANGE};margin-top:16px;margin-bottom:6px;border-left:4px solid {RUSH_ORANGE};padding-left:8px;}}
 .flbl {{font-weight:600;color:{RUSH_DARK};font-size:13px;margin-bottom:4px;display:block;}}
 div[data-testid="stExpander"] {{border: 1px solid #E5E5E5; border-radius: 4px; margin-bottom: 4px;}}
-/* Clean Custom Export Link Styling */
+
+/* Polished Standard-Height Export Link Link Wrapper */
 .rush-download-link {{
     display: block;
     text-align: center;
     background-color: #2B2F38;
     color: #FFFFFF !important;
-    padding: 10px;
-    border-radius: 6px;
+    padding: 6px 12px;
+    border-radius: 4px;
     text-decoration: none;
-    font-weight: bold;
-    margin-bottom: 15px;
+    font-weight: 500;
+    font-size: 14px;
+    line-height: 1.6;
+    border: 1px solid transparent;
 }}
 .rush-download-link:hover {{
     background-color: #FF6B00;
@@ -402,22 +405,46 @@ with tab2:
     st.subheader("All Projects Registry")
     projects = load_projects()
     
-    f_search = st.text_input("Global Search by Project Name", placeholder="Type project name to filter...", key="registry_search_bar")
+    # ── Reset Filters Logic Engine ───────────────────────────────────
+    if "clear_filters_trigger" in st.session_state and st.session_state.clear_filters_trigger:
+        f_search_val = ""
+        f_doctype_val = []
+        f_postatus_val = []
+        f_projstatus_val = []
+        f_ba_val = []
+        f_docstate_val = []
+        f_pipeline_val = []
+        st.session_state.clear_filters_trigger = False
+    else:
+        f_search_val = None
+        f_doctype_val = None
+        f_postatus_val = None
+        f_projstatus_val = None
+        f_ba_val = None
+        f_docstate_val = None
+        f_pipeline_val = None
+
+    # Enhanced multi-search input key mapping (Control Number, Merchant, Project Name)
+    f_search = st.text_input("Search", value=f_search_val, placeholder="Search by Project Name, Merchant, or Control Number...", key="registry_search_bar")
     
-    # ── Refactored 6x Dimension Filter Row Config ────────────────────
+    # ── 6x Dimension Filter Selection Workspace ───────────────────────
     c1, c2, c3 = st.columns(3)
-    with c1: f_doctype = st.multiselect("Filter by Document Type", doc_types + ["CRF - BRF", "CRF - FEF"])
-    with c2: f_postatus = st.multiselect("Filter by PO Status", ["Done", "Not Yet Done"])
-    with c3: f_projstatus = st.multiselect("Filter by Project Status", project_statuses + ["N/A"])
+    with c1: f_doctype = st.multiselect("Filter by Document Type", doc_types + ["CRF - BRF", "CRF - FEF"], default=f_doctype_val, key="f_dt_sel")
+    with c2: f_postatus = st.multiselect("Filter by PO Status", ["Done", "Not Yet Done"], default=f_postatus_val, key="f_po_sel")
+    with c3: f_projstatus = st.multiselect("Filter by Project Status", project_statuses + ["N/A"], default=f_projstatus_val, key="f_ps_sel")
     
     c4, c5, c6 = st.columns(3)
-    with c4: f_ba = st.multiselect("Filter by Assigned BA", ba_list)
-    with c5: f_docstate = st.multiselect("Filter by Document State", doc_states)
-    with c6: f_pipeline = st.multiselect("Filter by Pipeline Status", statuses)
+    with c4: f_ba = st.multiselect("Filter by Assigned BA", ba_list, default=f_ba_val, key="f_ba_sel")
+    with c5: f_docstate = st.multiselect("Filter by Document State", doc_states, default=f_docstate_val, key="f_ds_sel")
+    with c6: f_pipeline = st.multiselect("Filter by Pipeline Status", statuses, default=f_pipeline_val, key="f_pl_sel")
 
-    # Processing filtering calculations
+    # Multi-dimensional matching array iteration logic
     filtered = []
     for p in projects:
+        p_name = str(p.get("Project Name", "")).lower()
+        p_merchant = str(p.get("Merchant", "")).lower()
+        p_ctrl = str(p.get("Control Number", "")).lower()
+        
         p_doc_type = str(p.get("Doc Type", ""))
         p_po_status = str(p.get("PO Status", ""))
         p_proj_status = str(p.get("Project Status", ""))
@@ -425,7 +452,13 @@ with tab2:
         p_doc_state = str(p.get("Doc State", ""))
         p_pipeline = str(p.get("Pipeline Status", ""))
         
-        if (not f_search or f_search.lower() in str(p.get("Project Name","")).lower()) \
+        # Search criteria validation match logic tracking
+        search_matched = True
+        if f_search:
+            s_term = f_search.lower()
+            search_matched = (s_term in p_name) or (s_term in p_merchant) or (s_term in p_ctrl)
+            
+        if search_matched \
            and (not f_doctype or any(f in p_doc_type for f in f_doctype)) \
            and (not f_postatus or p_po_status in f_postatus) \
            and (not f_projstatus or p_proj_status in f_projstatus) \
@@ -434,66 +467,92 @@ with tab2:
            and (not f_pipeline or p_pipeline in f_pipeline):
             filtered.append(p)
 
-    # ── 🛠️ NEW CRASH-PROOF EXPORT LINK ENGINE ──
-    # Compiles active filters into a safe Base64 browser string, bypassing st.download_button metrics tracking completely
-    if len(filtered) > 0:
-        df_export = pd.DataFrame(filtered)
-        if "ID" in df_export.columns: 
-            df_export = df_export.drop(columns=["ID"])
-        csv_string = df_export.to_csv(index=False)
+    # Convert dictionary tracking records to workspace DataFrame
+    if filtered:
+        df_display = pd.DataFrame(filtered)
     else:
-        df_empty = pd.DataFrame(columns=[c for c in PROJECT_COLS if c != "ID"])
-        csv_string = df_empty.to_csv(index=False)
+        df_display = pd.DataFrame(columns=PROJECT_COLS)
+
+    # ── Global Sorting Toolbar Component Block ────────────────────────
+    st.markdown("##### Matrix Ordering Engine")
+    csort1, csort2 = st.columns([0.5, 0.5])
+    with csort1:
+        sort_col = st.selectbox(
+            "Select Column to Sort Matrix Rows", 
+            ["Created At", "Control Number", "Project Name", "Merchant", "Project Price", "Pipeline Status", "PO Status", "Project Status"]
+        )
+    with csort2:
+        sort_order = st.radio("Direction", ["Ascending", "Descending"], horizontal=True)
         
-    # Convert string to safe Base64 string payload
-    b64_csv = base64.b64encode(csv_string.encode()).decode()
-    filename = f"RUSH_Filtered_Projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-    
-    # Render custom styled browser anchor tag link
-    st.markdown(
-        f'<a href="data:file/csv;base64,{b64_csv}" download="{filename}" class="rush-download-link">📥 Click to Export Current Dataset to CSV File</a>', 
-        unsafe_allow_html=True
-    )
-    
+    # Process sorting variables cleanly across dataset
+    if not df_display.empty and sort_col in df_display.columns:
+        is_ascending = (sort_order == "Ascending")
+        if sort_col == "Project Price":
+            # Guard fallback values for text cells inside numeric evaluation slots
+            df_display["Project Price"] = pd.to_numeric(df_display["Project Price"], errors='coerce').fillna(0.0)
+        df_display = df_display.sort_values(by=sort_col, ascending=is_ascending)
+
+    # Convert data structural sorting arrays back to iterable rows list
+    filtered_sorted_records = df_display.to_dict(orient="records") if not df_display.empty else []
+
+    # ── Interactive Control Buttons Grid Layout ─────────────────────
+    c_exp, c_clr = st.columns([0.5, 0.5])
+    with c_exp:
+        if len(filtered_sorted_records) > 0:
+            df_export = pd.DataFrame(filtered_sorted_records)
+            if "ID" in df_export.columns: df_export = df_export.drop(columns=["ID"])
+            csv_string = df_export.to_csv(index=False)
+        else:
+            df_empty = pd.DataFrame(columns=[c for c in PROJECT_COLS if c != "ID"])
+            csv_string = df_empty.to_csv(index=False)
+            
+        b64_csv = base64.b64encode(csv_string.encode()).decode()
+        filename = f"RUSH_Filtered_Projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        st.markdown(
+            f'<a href="data:file/csv;base64,{b64_csv}" download="{filename}" class="rush-download-link">Export Current Dataset to CSV File</a>', 
+            unsafe_allow_html=True
+        )
+    with c_clr:
+        if st.button("Clear Active Filters", use_container_width=True, type="secondary"):
+            st.session_state.clear_filters_trigger = True
+            st.rerun()
+            
     st.markdown("---")
     
-    if filtered:
-        # Grid layout rendering block
-        th1, th2, th3, th4, th5, th6, th7, th8 = st.columns([1.5, 2.0, 1.3, 1.2, 1.2, 1.0, 1.8, 1.2])
+    if filtered_sorted_records:
+        # ── Table Grid Custom Headers Layout Assembly ─────────────────
+        # Structural design updates to allocate individual vertical columns to Price, PO, and Project Status parameters
+        th1, th2, th3, th4, th5, th6, th7, th8, th9 = st.columns([1.2, 1.8, 1.1, 1.1, 1.0, 1.1, 0.9, 1.0, 0.9])
         th1.markdown("**Control #**")
         th2.markdown("**Project Name**")
         th3.markdown("**Merchant**")
         th4.markdown("**Pipeline Status**")
-        th5.markdown("**Tribe**")
-        th6.markdown("**Doc Type**")
-        th7.markdown("**Details**")
-        th8.markdown("**Action**")
+        th5.markdown("**Doc Type**")
+        th6.markdown("**Price**")
+        th7.markdown("**PO Status**")
+        th8.markdown("**Project Status**")
+        th9.markdown("**Action**")
         st.markdown("<hr style='margin:4px 0px 12px 0px; border-top: 2px solid #2B2F38;' />", unsafe_allow_html=True)
         
-        for idx, p in enumerate(filtered):
-            r1, r2, r3, r4, r5, r6, r7, r8 = st.columns([1.5, 2.0, 1.3, 1.2, 1.2, 1.0, 1.8, 1.2])
+        for idx, p in enumerate(filtered_sorted_records):
+            r1, r2, r3, r4, r5, r6, r7, r8, r9 = st.columns([1.2, 1.8, 1.1, 1.1, 1.0, 1.1, 0.9, 1.0, 0.9])
             
             r1.write(p.get("Control Number") or "N/A")
             r2.write(f"**{p.get('Project Name')}**")
             r3.write(p.get("Merchant") or "N/A")
             r4.write(p.get("Pipeline Status") or "N/A")
-            r5.write(p.get("Tribe") or "N/A")
-            r6.write(p.get("Doc Type") or "N/A")
+            r5.write(p.get("Doc Type") or "N/A")
             
             try:
                 price_val = float(p.get('Project Price', 0) or 0)
             except:
                 price_val = 0.0
                 
-            detail_items = [f"PHP {price_val:,.2f}"]
-            if p.get("Sprint"): detail_items.append(f"Sprint: {p.get('Sprint')}")
-            if p.get("PO Status"): detail_items.append(f"PO: {p.get('PO Status')}")
-            if p.get("Project Status") and p.get("Project Status") != "N/A":
-                detail_items.append(f"Status: {p.get('Project Status')}")
-                
-            r7.write(" | ".join(detail_items))
+            r6.write(f"PHP {price_val:,.2f}")
+            r7.write(p.get("PO Status") or "N/A")
+            r8.write(p.get("Project Status") or "N/A")
             
-            with r8:
+            with r9:
                 pop = st.popover("Modify", use_container_width=True)
                 with pop:
                     st.markdown(f"### Update: {p.get('Control Number') or 'N/A'}")
@@ -532,7 +591,7 @@ with tab2:
                     edit_d_prod = st.date_input("Date Endorsed to Product", value=parse_date_safely(p.get("Date Endorsed Product")), key=f"e_dprod_{idx}")
                     edit_price = st.number_input("Price (PHP)", value=price_val, min_value=0.0, key=f"e_pr_{idx}")
                     
-                    # Safe fallbacks configuration fields
+                    # Safe fallbacks mapping fields configuration logic tracking references
                     edit_approval = "N/A"
                     edit_reason = ""
                     edit_rej_person = ""
