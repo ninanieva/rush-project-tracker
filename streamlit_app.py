@@ -4,6 +4,7 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
+import base64  # Standard Python module for safe file string encoding
 
 # ── Design System Color Variables ────────────────────────────────
 RUSH_ORANGE = "#FF6B00"
@@ -23,6 +24,21 @@ h1,h2,h3 {{color:{RUSH_DARK};}}
 .lsec {{font-weight:700;font-size:15px;color:{RUSH_ORANGE};margin-top:16px;margin-bottom:6px;border-left:4px solid {RUSH_ORANGE};padding-left:8px;}}
 .flbl {{font-weight:600;color:{RUSH_DARK};font-size:13px;margin-bottom:4px;display:block;}}
 div[data-testid="stExpander"] {{border: 1px solid #E5E5E5; border-radius: 4px; margin-bottom: 4px;}}
+/* Clean Custom Export Link Styling */
+.rush-download-link {{
+    display: block;
+    text-align: center;
+    background-color: #2B2F38;
+    color: #FFFFFF !important;
+    padding: 10px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+    margin-bottom: 15px;
+}}
+.rush-download-link:hover {{
+    background-color: #FF6B00;
+}}
 </style>""", unsafe_allow_html=True)
 
 st.title("RUSH Project Tracker")
@@ -418,25 +434,25 @@ with tab2:
            and (not f_pipeline or p_pipeline in f_pipeline):
             filtered.append(p)
 
-    # ── Hardened Deferred Export Engine (Callback Pattern) ──
-    # Resolves metrics_util framework crashes by wrapping compilation inside an implicit generator
-    def generate_filtered_csv():
-        if len(filtered) > 0:
-            df_export = pd.DataFrame(filtered)
-            if "ID" in df_export.columns: 
-                df_export = df_export.drop(columns=["ID"])
-            return df_export.to_csv(index=False)
-        else:
-            df_empty = pd.DataFrame(columns=[c for c in PROJECT_COLS if c != "ID"])
-            return df_empty.to_csv(index=False)
-
-    st.download_button(
-        label="📥 Export Current Filtered Dataset to CSV",
-        data=generate_filtered_csv(),  # Pass compiled contents via strict functional callback scope
-        fileName=f"RUSH_Filtered_Projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv",
-        use_container_width=True,
-        key="continuous_csv_downloader"
+    # ── 🛠️ NEW CRASH-PROOF EXPORT LINK ENGINE ──
+    # Compiles active filters into a safe Base64 browser string, bypassing st.download_button metrics tracking completely
+    if len(filtered) > 0:
+        df_export = pd.DataFrame(filtered)
+        if "ID" in df_export.columns: 
+            df_export = df_export.drop(columns=["ID"])
+        csv_string = df_export.to_csv(index=False)
+    else:
+        df_empty = pd.DataFrame(columns=[c for c in PROJECT_COLS if c != "ID"])
+        csv_string = df_empty.to_csv(index=False)
+        
+    # Convert string to safe Base64 string payload
+    b64_csv = base64.b64encode(csv_string.encode()).decode()
+    filename = f"RUSH_Filtered_Projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    # Render custom styled browser anchor tag link
+    st.markdown(
+        f'<a href="data:file/csv;base64,{b64_csv}" download="{filename}" class="rush-download-link">📥 Click to Export Current Dataset to CSV File</a>', 
+        unsafe_allow_html=True
     )
     
     st.markdown("---")
