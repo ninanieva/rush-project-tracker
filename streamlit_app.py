@@ -418,21 +418,21 @@ with tab2:
            and (not f_pipeline or p_pipeline in f_pipeline):
             filtered.append(p)
 
-    # ── Hardened Exporter Engine (Safe Functional Variable Allocation) ──
-    # Renders the button seamlessly across all filtered states using plain string conversions
-    if len(filtered) > 0:
-        df_export = pd.DataFrame(filtered)
-        if "ID" in df_export.columns: 
-            df_export = df_export.drop(columns=["ID"])
-        csv_string_content = df_export.to_csv(index=False)
-    else:
-        # If no entries match the filters, default to exporting a clear header shell structure
-        df_empty = pd.DataFrame(columns=[c for c in PROJECT_COLS if c != "ID"])
-        csv_string_content = df_empty.to_csv(index=False)
+    # ── Hardened Deferred Export Engine (Callback Pattern) ──
+    # Resolves metrics_util framework crashes by wrapping compilation inside an implicit generator
+    def generate_filtered_csv():
+        if len(filtered) > 0:
+            df_export = pd.DataFrame(filtered)
+            if "ID" in df_export.columns: 
+                df_export = df_export.drop(columns=["ID"])
+            return df_export.to_csv(index=False)
+        else:
+            df_empty = pd.DataFrame(columns=[c for c in PROJECT_COLS if c != "ID"])
+            return df_empty.to_csv(index=False)
 
     st.download_button(
         label="📥 Export Current Filtered Dataset to CSV",
-        data=str(csv_string_content),
+        data=generate_filtered_csv(),  # Pass compiled contents via strict functional callback scope
         fileName=f"RUSH_Filtered_Projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
         mime="text/csv",
         use_container_width=True,
