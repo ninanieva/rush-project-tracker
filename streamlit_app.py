@@ -71,14 +71,27 @@ def load_projects():
             
         headers = raw_rows[0]
         
-        # Self-Healing Schema: Automatically add missing columns to user's sheet if old sheet exists
+        # FIX: Pop out trailing empty column strings to get an accurate active grid count
+        while headers and headers[-1] == "":
+            headers.pop()
+        
+        # Self-Healing Schema: Automatically add missing columns safely within bounds
         missing_cols = [c for c in PROJECT_COLS if c not in headers]
         if missing_cols:
+            total_grid_cols = ws.col_count
+            needed_cols = len(headers) + len(missing_cols)
+            if needed_cols > total_grid_cols:
+                ws.add_cols(needed_cols - total_grid_cols)
+            
             for col in missing_cols:
-                ws.update_cell(1, len(headers) + 1, col)
                 headers.append(col)
+                ws.update_cell(1, len(headers), col)
+            
+            # Refresh row data arrays following schema modification
             raw_rows = ws.get_all_values()
             headers = raw_rows[0]
+            while headers and headers[-1] == "":
+                headers.pop()
             
         records = []
         for row in raw_rows[1:]:
@@ -100,6 +113,8 @@ def save_project(p):
         ws = get_sheet("Projects")
         raw_rows = ws.get_all_values()
         headers = raw_rows[0] if raw_rows else PROJECT_COLS
+        while headers and headers[-1] == "":
+            headers.pop()
         
         row_to_append = []
         for col in headers:
@@ -119,13 +134,12 @@ def update_project_row(project_id, updated_p):
         if cell:
             raw_rows = ws.get_all_values()
             headers = raw_rows[0]
+            while headers and headers[-1] == "":
+                headers.pop()
             
             row_values = []
             for col in headers:
-                if col in updated_p:
-                    row_values.append(str(updated_p[col]))
-                else:
-                    row_values.append("")
+                row_values.append(str(updated_p.get(col, "")))
                     
             end_col_letter = gspread.utils.rowcol_to_a1(cell.row, len(headers)).split(str(cell.row))[0]
             ws.update(f"A{cell.row}:{end_col_letter}{cell.row}", [row_values])
@@ -258,7 +272,6 @@ def safe_index(options, value):
 with tab1:
     st.subheader("Add New Record Entry")
     
-    # State versions allow full form clearance outside standard HTML containers
     fid = st.session_state.form_id
     
     placeholder_doc_types = [""] + doc_types
@@ -403,7 +416,7 @@ with tab1:
                 "Created At": datetime.now().isoformat()
             }
             if save_project(new_p):
-                st.session_state.form_id += 1 # Increments layout version state to instantly clear the inputs
+                st.session_state.form_id += 1 
                 st.success("Project added successfully!")
                 st.rerun()
 
