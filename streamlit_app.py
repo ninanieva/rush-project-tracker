@@ -242,7 +242,7 @@ tribes           = s.get("tribes", DEFAULT_SETTINGS["tribes"])
 statuses         = s.get("statuses", DEFAULT_SETTINGS["statuses"])
 project_statuses = s.get("project_statuses", DEFAULT_SETTINGS["project_statuses"])
 
-# ── Tabs Navigation Architecture (Analytics Removed) ──────────────────────
+# ── Tabs Navigation Architecture ──────────────────────────────────
 tab1, tab2 = st.tabs(["📊 Create Project", "📋 All Projects Workspace"])
 
 def lsec(t): st.markdown(f'<p class="lsec">{t}</p>', unsafe_allow_html=True)
@@ -400,7 +400,7 @@ with tab2:
         with c5: f_docstate = st.multiselect("Filter by Document State", doc_states)
         with c6: f_pipeline = st.multiselect("Filter by Pipeline Status", statuses)
 
-        # Processing loop filtering operations
+        # Processing filtering calculations
         filtered = []
         for p in projects:
             p_doc_type = str(p.get("Doc Type", ""))
@@ -419,17 +419,18 @@ with tab2:
                and (not f_pipeline or p_pipeline in f_pipeline):
                 filtered.append(p)
 
-        # ── Safe Data Exporter Interface Matrix ───────────────────────
+        # ── Safe Data Exporter Engine (Fixed Payload for Python 3.14) ──
         if len(filtered) > 0:
             df_export = pd.DataFrame(filtered)
             if "ID" in df_export.columns: 
                 df_export = df_export.drop(columns=["ID"])
             
-            csv_data = df_export.to_csv(index=False).encode('utf-8')
+            # Fix: Pass raw string content cleanly instead of double-encoding data streams
+            csv_string_data = df_export.to_csv(index=False)
             
             st.download_button(
                 label="📥 Export Current Filtered Dataset to CSV",
-                data=csv_data,
+                data=csv_string_data,
                 fileName=f"RUSH_Filtered_Projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv",
                 use_container_width=True
@@ -439,7 +440,7 @@ with tab2:
         
         st.markdown("---")
         
-        # Grid structural headers
+        # Grid layout rendering block
         th1, th2, th3, th4, th5, th6, th7, th8 = st.columns([1.5, 2.0, 1.3, 1.2, 1.2, 1.0, 1.8, 1.2])
         th1.markdown("**Control #**")
         th2.markdown("**Project Name**")
@@ -513,7 +514,7 @@ with tab2:
                     edit_d_prod = st.date_input("Date Endorsed to Product", value=parse_date_safely(p.get("Date Endorsed Product")), key=f"e_dprod_{idx}")
                     edit_price = st.number_input("Price (PHP)", value=price_val, min_value=0.0, key=f"e_pr_{idx}")
                     
-                    # Safe fallbacks mapping config
+                    # Safe fallbacks configuration fields
                     edit_approval = "N/A"
                     edit_reason = ""
                     edit_rej_person = ""
