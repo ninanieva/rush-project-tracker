@@ -27,7 +27,7 @@ h1,h2,h3 {{color:{RUSH_DARK};}}
 
 st.title("RUSH Project Tracker")
 
-# ── Google Sheets Hardened Write Connection Engine ───────────────
+# ── Google Sheets Hardened Dynamic Header-Sync Engine ───────────
 SHEET_ID   = st.secrets["GOOGLE_SHEETS_ID"]
 SA_CREDS   = st.secrets["service_account"]
 SCOPE      = [
@@ -35,7 +35,6 @@ SCOPE      = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Explicit tracking schema mapping matching current structural requests
 PROJECT_COLS = [
     "ID", "Doc Type", "Project Name", "Control Number", "PO Status", "Merchant", "Endorsed By",
     "Project Price", "Links", "Date Endorsed Commercial", "Doc Expiry Date",
@@ -55,7 +54,6 @@ def get_sheet(tab):
     try:
         return sh.worksheet(tab)
     except gspread.exceptions.WorksheetNotFound:
-        # Generate clean spreadsheet columns mapping if initialized on a blank workbook
         ws = sh.add_worksheet(tab, rows=1000, cols=35)
         if tab == "Projects":
             ws.append_row(PROJECT_COLS)
@@ -68,15 +66,27 @@ def load_projects():
     try:
         ws = get_sheet("Projects")
         raw_rows = ws.get_all_values()
-        if not raw_rows or len(raw_rows) < 2:
+        if not raw_rows or len(raw_rows) < 1:
             return []
+            
+        headers = raw_rows[0]
+        
+        # Self-Healing Schema: Automatically add missing columns to user's sheet if old sheet exists
+        missing_cols = [c for c in PROJECT_COLS if c not in headers]
+        if missing_cols:
+            for col in missing_cols:
+                ws.update_cell(1, len(headers) + 1, col)
+                headers.append(col)
+            raw_rows = ws.get_all_values()
+            headers = raw_rows[0]
             
         records = []
         for row in raw_rows[1:]:
             record = {}
-            for idx, col_name in enumerate(PROJECT_COLS):
-                if idx < len(row):
-                    record[col_name] = row[idx]
+            for col_name in PROJECT_COLS:
+                if col_name in headers:
+                    idx = headers.index(col_name)
+                    record[col_name] = row[idx] if idx < len(row) else ""
                 else:
                     record[col_name] = ""
             records.append(record)
@@ -88,7 +98,14 @@ def load_projects():
 def save_project(p):
     try:
         ws = get_sheet("Projects")
-        ws.append_row([p.get(c,"") for c in PROJECT_COLS])
+        raw_rows = ws.get_all_values()
+        headers = raw_rows[0] if raw_rows else PROJECT_COLS
+        
+        row_to_append = []
+        for col in headers:
+            row_to_append.append(str(p.get(col, "")))
+            
+        ws.append_row(row_to_append)
         load_projects.clear()
         return True
     except Exception as e:
@@ -100,9 +117,17 @@ def update_project_row(project_id, updated_p):
         ws = get_sheet("Projects")
         cell = ws.find(project_id)
         if cell:
-            row_values = [str(updated_p.get(c, "")) for c in PROJECT_COLS]
-            # End column mapped dynamically via letter index positioning calculation
-            end_col_letter = gspread.utils.rowcol_to_a1(cell.row, len(PROJECT_COLS)).split(str(cell.row))[0]
+            raw_rows = ws.get_all_values()
+            headers = raw_rows[0]
+            
+            row_values = []
+            for col in headers:
+                if col in updated_p:
+                    row_values.append(str(updated_p[col]))
+                else:
+                    row_values.append("")
+                    
+            end_col_letter = gspread.utils.rowcol_to_a1(cell.row, len(headers)).split(str(cell.row))[0]
             ws.update(f"A{cell.row}:{end_col_letter}{cell.row}", [row_values])
         load_projects.clear()
         return True
@@ -153,6 +178,8 @@ def save_settings(settings_dict):
 # ── Session State Configuration Management ───────────────────────
 if "projects" not in st.session_state:
     st.session_state.projects = load_projects()
+if "form_id" not in st.session_state:
+    st.session_state.form_id = 0
 
 DEFAULT_SETTINGS = {
     "doc_types": ["CRF","BRF","FEF","System Design","Feature Spec","Integration Doc","Release Notes"],
@@ -227,9 +254,12 @@ def safe_index(options, value):
     except ValueError:
         return 0
 
-# ── Tab 1: Create Project Entry Form (Enter-Key Safe) ─────────────
+# ── Tab 1: Create Project Entry Form (Enter-Key Safe & Resettable) ──
 with tab1:
     st.subheader("Add New Record Entry")
+    
+    # State versions allow full form clearance outside standard HTML containers
+    fid = st.session_state.form_id
     
     placeholder_doc_types = [""] + doc_types
     placeholder_ba_list   = [""] + ba_list
@@ -238,89 +268,86 @@ with tab1:
     placeholder_statuses  = [""] + statuses
     placeholder_po_status = ["", "Done", "Not Yet Done"]
 
-    doc_type = st.selectbox("Document Type *", placeholder_doc_types, index=0, key="f_doctype")
+    doc_type = st.selectbox("Document Type *", placeholder_doc_types, index=0, key=f"f_doctype_{fid}")
     
     crf_subtype = ""
     if doc_type == "CRF":
-        crf_subtype = st.selectbox("CRF Type Option", ["", "BRF", "FEF"], index=0, key="f_crf_subtype")
+        crf_subtype = st.selectbox("CRF Type Option", ["", "BRF", "FEF"], index=0, key=f"f_crf_subtype_{fid}")
     
-    # Standard containers replace st.form to completely eliminate accidental enter-key submissions
     c1, c2 = st.columns(2)
     with c1:
-        project_name = st.text_input("Project Name *", placeholder="Enter project name", key="f_name")
+        project_name = st.text_input("Project Name *", placeholder="Enter project name", key=f"f_name_{fid}")
     with c2:
-        merchant = st.text_input("Merchant", placeholder="Enter merchant name", key="f_merchant")
+        merchant = st.text_input("Merchant", placeholder="Enter merchant name", key=f"f_merchant_{fid}")
 
     c1, c2 = st.columns(2)
     with c1:
-        ctrl_no = st.text_input("Control Number", placeholder="Leave blank to auto-generate tracking sequence", key="f_ctrl")
+        ctrl_no = st.text_input("Control Number", placeholder="Leave blank to auto-generate tracking sequence", key=f"f_ctrl_{fid}")
     with c2:
-        po_status = st.selectbox("PO Status", placeholder_po_status, index=0, key="f_postatus")
+        po_status = st.selectbox("PO Status", placeholder_po_status, index=0, key=f"f_postatus_{fid}")
         
     c1, c2 = st.columns(2)
     with c1:
-        endorsed_by = st.text_input("Endorsed By", placeholder="Endorser name", key="f_endorsed")
+        endorsed_by = st.text_input("Endorsed By", placeholder="Endorser name", key=f"f_endorsed_{fid}")
     with c2:
-        price = st.number_input("Project Price (PHP)", value=0.0, min_value=0.0, key="f_price")
+        price = st.number_input("Project Price (PHP)", value=0.0, min_value=0.0, key=f"f_price_{fid}")
 
-    # Conditional Visibility Logic block for Project Status assignment
     project_status = "N/A"
     reason_for_rejection = ""
     rejector = ""
     
     if doc_type in ["CRF", "BRF", "FEF"]:
-        project_status = st.selectbox("Project Status", ["", "Approved", "Rejected"], index=0, key="f_project_status")
+        project_status = st.selectbox("Project Status", ["", "Approved", "Rejected"], index=0, key=f"f_project_status_{fid}")
         
-        # Sub-conditional fields triggered exclusively when status is marked "Rejected"
         if project_status == "Rejected":
             c1, c2 = st.columns(2)
             with c1:
-                reason_for_rejection = st.text_input("Reason for Rejection *", placeholder="State why this project was rejected", key="f_reason_rejection")
+                reason_for_rejection = st.text_input("Reason for Rejection *", placeholder="State why this project was rejected", key=f"f_reason_rejection_{fid}")
             with c2:
-                rejector = st.text_input("Rejector *", placeholder="Name of individual who rejected the project", key="f_rejector")
+                rejector = st.text_input("Rejector *", placeholder="Name of individual who rejected the project", key=f"f_rejector_{fid}")
 
     if doc_type == "CRF":
         lsec("Commercial Timeline")
         g1_left, g1_right = st.columns(2)
-        with g1_left: d_commercial = st.date_input("Date Endorsed to Commercials", value=None, key="f_dcom")
-        with g1_right: d_expiry = st.date_input("Document Expiry Date", value=None, key="f_dexp")
+        with g1_left: d_commercial = st.date_input("Date Endorsed to Commercials", value=None, key=f"f_dcom_{fid}")
+        with g1_right: d_expiry = st.date_input("Document Expiry Date", value=None, key=f"f_dexp_{fid}")
     else:
         d_commercial, d_expiry = "", ""
 
     lsec("BA Assignment & Workflow")
     g2_left, g2_right = st.columns(2)
-    with g2_left: d_ba = st.date_input("Date Endorsed to BA", value=None, key="f_dba")
-    with g2_right: d_ack = st.date_input("Date Acknowledged by BA", value=None, key="f_dack")
+    with g2_left: d_ba = st.date_input("Date Endorsed to BA", value=None, key=f"f_dba_{fid}")
+    with g2_right: d_ack = st.date_input("Date Acknowledged by BA", value=None, key=f"f_dack_{fid}")
 
     c1, c2 = st.columns(2)
     with c1:
-        assigned_ba = st.selectbox("Assigned BA", placeholder_ba_list, index=0, key="f_ba")
+        assigned_ba = st.selectbox("Assigned BA", placeholder_ba_list, index=0, key=f"f_ba_{fid}")
     with c2:
-        doc_state = st.selectbox("Document State", placeholder_doc_states, index=0, key="f_docstate")
+        doc_state = st.selectbox("Document State", placeholder_doc_states, index=0, key=f"f_docstate_{fid}")
 
     lsec("Tribe & Sprint Parameters")
     c1, c2 = st.columns(2)
     with c1:
-        tribe = st.selectbox("Tribe", placeholder_tribes, index=0, key="f_tribe")
+        tribe = st.selectbox("Tribe", placeholder_tribes, index=0, key=f"f_tribe_{fid}")
     with c2:
-        sprint = st.text_input("Sprint (Optional)", placeholder="e.g., Sprint 42", key="f_sprint")
+        sprint = st.text_input("Sprint (Optional)", placeholder="e.g., Sprint 42", key=f"f_sprint_{fid}")
 
     lsec("Tech Timeline & Status")
     g3_left, g3_right = st.columns(2)
-    with g3_left: d_tech = st.date_input("Date Endorsed to Tech", value=None, key="f_dtech")
-    with g3_right: d_golive = st.date_input("Go Live Date", value=None, key="f_golive")
+    with g3_left: d_tech = st.date_input("Date Endorsed to Tech", value=None, key=f"f_dtech_{fid}")
+    with g3_right: d_golive = st.date_input("Go Live Date", value=None, key=f"f_golive_{fid}")
         
-    pipeline_status = st.selectbox("Pipeline Status", placeholder_statuses, index=0, key="f_status")
+    pipeline_status = st.selectbox("Pipeline Status", placeholder_statuses, index=0, key=f"f_status_{fid}")
 
     lsec("Links")
     lc = st.columns(4)
-    with lc[0]: crf_url = st.text_input("CRF Link", key="f_link_crf", placeholder="URL")
-    with lc[1]: brf_url = st.text_input("BRF Link", key="f_link_brf", placeholder="URL")
-    with lc[2]: fef_url = st.text_input("FEF Link", key="f_link_fef", placeholder="URL")
-    with lc[3]: figma_url = st.text_input("Figma Link", key="f_link_figma", placeholder="URL")
+    with lc[0]: crf_url = st.text_input("CRF Link", key=f"f_link_crf_{fid}", placeholder="URL")
+    with lc[1]: brf_url = st.text_input("BRF Link", key=f"f_link_brf_{fid}", placeholder="URL")
+    with lc[2]: fef_url = st.text_input("FEF Link", key=f"f_link_fef_{fid}", placeholder="URL")
+    with lc[3]: figma_url = st.text_input("Figma Link", key=f"f_link_figma_{fid}", placeholder="URL")
 
     lsec("Remarks")
-    remarks = st.text_area("Remarks / Notes", placeholder="Enter any extra remarks...", height=70, key="f_remarks")
+    remarks = st.text_area("Remarks / Notes", placeholder="Enter any extra remarks...", height=70, key=f"f_remarks_{fid}")
 
     st.markdown("---")
     if st.button("Save Project Data", use_container_width=True, type="primary"):
@@ -330,7 +357,7 @@ with tab1:
             st.error("Reason for Rejection and Rejector are required fields when status is marked 'Rejected'.")
         else:
             year_str = datetime.now().strftime("%Y")
-            type_seq = sum(1 for p in load_projects() if p.get("Doc Type", "").startswith(doc_type)) + 1
+            type_seq = sum(1 for p in load_projects() if str(p.get("Doc Type", "")).startswith(doc_type)) + 1
             
             if ctrl_no:
                 final_ctrl = ctrl_no
@@ -376,10 +403,11 @@ with tab1:
                 "Created At": datetime.now().isoformat()
             }
             if save_project(new_p):
+                st.session_state.form_id += 1 # Increments layout version state to instantly clear the inputs
                 st.success("Project added successfully!")
                 st.rerun()
 
-# ── Tab 2: All Projects Matrix Table View (Enter-Key Safe) ────────
+# ── Tab 2: All Projects Matrix Table View ────────────────────────
 with tab2:
     st.subheader("All Projects Registry")
     projects = tag_expiry(load_projects())
@@ -405,7 +433,6 @@ with tab2:
 
         st.markdown("---")
         
-        # Table Grid Headers
         th1, th2, th3, th4, th5, th6, th7, th8 = st.columns([1.5, 2.0, 1.3, 1.2, 1.2, 1.0, 1.8, 1.2])
         th1.markdown("**Control #**")
         th2.markdown("**Project Name**")
@@ -427,7 +454,6 @@ with tab2:
             r5.write(p.get("Tribe") or "N/A")
             r6.write(p.get("Doc Type") or "N/A")
             
-            # Construct structured details column parameters
             detail_items = [f"PHP {float(p.get('Project Price',0) or 0):,.2f}"]
             if p.get("Sprint"): detail_items.append(f"Sprint: {p.get('Sprint')}")
             if p.get("PO Status"): detail_items.append(f"PO: {p.get('PO Status')}")
@@ -465,7 +491,6 @@ with tab2:
                     edit_endorsed = st.text_input("Endorsed By", value=p.get("Endorsed By"), key=f"e_end_{idx}")
                     edit_price = st.number_input("Price (PHP)", value=float(p.get("Project Price", 0) or 0), min_value=0.0, key=f"e_pr_{idx}")
                     
-                    # Edit layout for Project Status with dynamic rejection tracking parameters
                     edit_approval = "N/A"
                     edit_reason = ""
                     edit_rej_person = ""
