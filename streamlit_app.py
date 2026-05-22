@@ -4,6 +4,7 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
+import io  # Added standard library import for memory stream buffering
 
 # ── Design System Color Variables ────────────────────────────────
 RUSH_ORANGE = "#FF6B00"
@@ -419,18 +420,20 @@ with tab2:
                and (not f_pipeline or p_pipeline in f_pipeline):
                 filtered.append(p)
 
-        # ── Safe Data Exporter Engine (Fixed Payload for Python 3.14) ──
+        # ── Hardened StringIO File Stream Wrapper Exporter Engine ──
         if len(filtered) > 0:
             df_export = pd.DataFrame(filtered)
             if "ID" in df_export.columns: 
                 df_export = df_export.drop(columns=["ID"])
             
-            # Fix: Pass raw string content cleanly instead of double-encoding data streams
-            csv_string_data = df_export.to_csv(index=False)
+            # Fix: Wrap string output inside an IO stream buffer object to eliminate telemetry crashes
+            csv_buffer = io.StringIO()
+            df_export.to_csv(csv_buffer, index=False)
+            csv_string_payload = csv_buffer.getvalue()
             
             st.download_button(
                 label="📥 Export Current Filtered Dataset to CSV",
-                data=csv_string_data,
+                data=csv_string_payload,
                 fileName=f"RUSH_Filtered_Projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv",
                 use_container_width=True
