@@ -18,7 +18,6 @@ RUSH_WHITE  = "#FFFFFF"
 
 st.set_page_config(page_title="RUSH Project Tracker", layout="wide", initial_sidebar_state="expanded")
 
-# Enhanced styling for native look
 st.markdown(f"""<style>
 .stApp {{background-color:{RUSH_WHITE};}}
 .stMetricValue {{color:{RUSH_ORANGE};font-weight:bold;}}
@@ -45,7 +44,7 @@ SCOPE      = [
 
 PROJECT_COLS = [
     "ID", "Doc Type", "Project Name", "Control Number", "PO Status", "Merchant", "Endorsed By",
-    "Project Price", "Links", "Date Endorsed Commercial", "Doc Expiry Date",
+    "Date Endorsed Product", "Project Price", "Links", "Date Endorsed Commercial", "Doc Expiry Date",
     "Date Endorsed BA", "Assigned BA", "Date Ack BA", "Doc State", "Tribe", "Sprint",
     "Pipeline Status", "Date Endorsed Tech", "Go Live Date", "Project Status", 
     "Reason for Rejection", "Rejector", "Remarks", "Created At"
@@ -69,7 +68,7 @@ def get_sheet(tab):
             ws.append_row(["key","value"])
         return ws
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=2)
 def load_projects():
     try:
         ws = get_sheet("Projects")
@@ -81,7 +80,6 @@ def load_projects():
             
         headers = [h.strip() for h in raw_rows[0]]
         
-        # Self-Healing Schema Check
         missing_cols = [c for c in PROJECT_COLS if c not in headers]
         if missing_cols:
             total_grid_cols = ws.col_count
@@ -98,13 +96,17 @@ def load_projects():
         if len(raw_rows) <= 1:
             return []
             
-        # Optimization: Build DataFrame directly to bypass slow loop over large matrices
-        df = pd.DataFrame(raw_rows[1:], columns=headers)
-        # Pad columns that might exist in schema but are completely absent from data rows
-        for col in PROJECT_COLS:
-            if col not in df.columns:
-                df[col] = ""
-        return df.to_dict(orient="records")
+        records = []
+        for row in raw_rows[1:]:
+            record = {}
+            for col_name in PROJECT_COLS:
+                if col_name in headers:
+                    idx = headers.index(col_name)
+                    record[col_name] = row[idx] if idx < len(row) else ""
+                else:
+                    record[col_name] = ""
+            records.append(record)
+        return records
     except Exception as e:
         st.error(f"Failed to fetch data from sheet: {e}")
         return []
@@ -115,7 +117,11 @@ def save_project(p):
         raw_rows = ws.get_all_values()
         headers = [h.strip() for h in raw_rows[0]] if raw_rows else PROJECT_COLS
         
-        row_to_append = [str(p.get(col, "")) for col in headers if col]
+        row_to_append = []
+        for col in headers:
+            if col: 
+                row_to_append.append(str(p.get(col, "")))
+                
         ws.append_row(row_to_append)
         load_projects.clear()
         return True
@@ -288,23 +294,27 @@ with tab1:
     with c2: merchant = st.text_input("Merchant", placeholder="Enter merchant name", key=f"f_merchant_{fid}")
 
     c1, c2 = st.columns(2)
-    with c1: ctrl_no = st.text_input("Control Number", placeholder="Leave blank to auto-generate tracking sequence", key=f"f_ctrl_{fid}")
+    with c1: ctrl_no = st.text_input("Control Number (Optional)", placeholder="Enter control code if available", key=f"f_ctrl_{fid}")
     with c2: po_status = st.selectbox("PO Status", placeholder_po_status, index=0, key=f"f_postatus_{fid}")
         
     c1, c2 = st.columns(2)
     with c1: endorsed_by = st.text_input("Endorsed By", placeholder="Endorser name", key=f"f_endorsed_{fid}")
-    with c2: price = st.number_input("Project Price (PHP)", value=0.0, min_value=0.0, key=f"f_price_{fid}")
+    with c2: d_product = st.date_input("Date Endorsed to Product", value=None, key=f"f_dprod_{fid}")
 
-    project_status = "N/A"
+    c1, c2 = st.columns(2)
+    with c1: price = st.number_input("Project Price (PHP)", value=0.0, min_value=0.0, key=f"f_price_{fid}")
+    with c2: 
+        if doc_type in ["CRF", "BRF", "FEF"]:
+            project_status = st.selectbox("Project Status", placeholder_project_statuses, index=0, key=f"f_project_status_{fid}")
+        else:
+            project_status = "N/A"
+
     reason_for_rejection = ""
     rejector = ""
-    
-    if doc_type in ["CRF", "BRF", "FEF"]:
-        project_status = st.selectbox("Project Status", placeholder_project_statuses, index=0, key=f"f_project_status_{fid}")
-        if project_status == "Rejected":
-            c1, c2 = st.columns(2)
-            with c1: reason_for_rejection = st.text_input("Reason for Rejection *", placeholder="State rejection logic", key=f"f_reason_rejection_{fid}")
-            with c2: rejector = st.text_input("Rejector *", placeholder="Individual who rejected", key=f"f_rejector_{fid}")
+    if project_status == "Rejected":
+        c1, c2 = st.columns(2)
+        with c1: reason_for_rejection = st.text_input("Reason for Rejection *", placeholder="State rejection logic", key=f"f_reason_rejection_{fid}")
+        with c2: rejector = st.text_input("Rejector *", placeholder="Individual who rejected", key=f"f_rejector_{fid}")
 
     if doc_type == "CRF":
         lsec("Commercial Timeline")
@@ -352,24 +362,6 @@ with tab1:
         elif project_status == "Rejected" and (not reason_for_rejection or not rejector):
             st.error("Reason for Rejection and Rejector are required fields when status is marked 'Rejected'.")
         else:
-            year_str = datetime.now().strftime("%Y")
-            current_projects = load_projects()
-            type_seq = sum(1 for p in current_projects if str(p.get("Doc Type", "")).startswith(doc_type)) + 1
-            
-            if ctrl_no:
-                final_ctrl = ctrl_no
-            else:
-                if doc_type == "CRF":
-                    final_ctrl = f"CRF-{year_str}-{type_seq:04d}"
-                elif doc_type == "BRF":
-                    tribe_clean = tribe.replace(" Tribe", "").upper() if tribe else "UNKNOWN"
-                    final_ctrl = f"BRF-{tribe_clean}-{year_str}-{type_seq:04d}"
-                elif doc_type == "FEF":
-                    final_ctrl = f"FEF-{year_str}-{type_seq:04d}"
-                else:
-                    clean_doc = doc_type.upper().replace(" ", "") if doc_type else "DOC"
-                    final_ctrl = f"{clean_doc}-{year_str}-{type_seq:04d}"
-
             links_compiled = []
             if crf_url: links_compiled.append(f"CRF: {crf_url}")
             if brf_url: links_compiled.append(f"BRF: {brf_url}")
@@ -381,13 +373,14 @@ with tab1:
             new_p = {
                 "ID": datetime.now().isoformat(),
                 "Doc Type": final_saved_doc_type, "Project Name": project_name,
-                "Control Number": final_ctrl, "PO Status": po_status, "Merchant": merchant,
-                "Endorsed By": endorsed_by, "Project Price": price,
+                "Control Number": ctrl_no if ctrl_no else "N/A", "PO Status": po_status, "Merchant": merchant,
+                "Endorsed By": endorsed_by, 
+                "Date Endorsed Product": str(d_product) if d_product else "",
+                "Project Price": price,
                 "Links": " | ".join(links_compiled),
                 "Date Endorsed Commercial": str(d_commercial) if d_commercial else "",
                 "Doc Expiry Date": str(d_expiry) if d_expiry else "",
-                "Date Endorsed BA": str(d_ba) if d_ba else "",
-                "Assigned BA": assigned_ba, 
+                "Date Endorsed BA": str(d_ba) if d_ba else "", "Assigned BA": assigned_ba, 
                 "Date Ack BA": str(d_ack) if d_ack else "",
                 "Doc State": doc_state, "Tribe": tribe, "Sprint": sprint,
                 "Pipeline Status": pipeline_status,
@@ -410,10 +403,9 @@ with tab2:
     projects = tag_expiry(load_projects())
     
     if projects:
-        # Optimized sorting via dataframes
         df_proj = pd.DataFrame(projects)
         unique_merchants = sorted(df_proj["Merchant"].dropna().unique().tolist()) if "Merchant" in df_proj.columns else []
-        unique_merchants = [m for m in unique_merchants if m.strip() != ""]
+        unique_merchants = [m for m in unique_merchants if str(m).strip() != ""]
         
         f_search = st.text_input("Search Project Name", placeholder="Type project name to filter standard registry list...")
         
@@ -423,7 +415,6 @@ with tab2:
         with c3: f_expiry = st.multiselect("Filter Expiry Status", ["Active","Expiring Soon","Expired"])
         with c4: f_merchant = st.multiselect("Filter Merchant", unique_merchants)
 
-        # Python engine level filtering optimization
         filtered = [p for p in projects
                     if (not f_search or f_search.lower() in str(p.get("Project Name","")).lower())
                     and (not f_status or p.get("Pipeline Status") in f_status)
@@ -447,7 +438,7 @@ with tab2:
         for idx, p in enumerate(filtered):
             r1, r2, r3, r4, r5, r6, r7, r8 = st.columns([1.5, 2.0, 1.3, 1.2, 1.2, 1.0, 1.8, 1.2])
             
-            r1.write(p.get("Control Number"))
+            r1.write(p.get("Control Number") or "N/A")
             r2.write(f"**{p.get('Project Name')}**")
             r3.write(p.get("Merchant") or "N/A")
             r4.write(p.get("Pipeline Status") or "N/A")
@@ -470,7 +461,7 @@ with tab2:
             with r8:
                 pop = st.popover("Modify", use_container_width=True)
                 with pop:
-                    st.markdown(f"### Update: {p.get('Control Number')}")
+                    st.markdown(f"### Update: {p.get('Control Number') or 'N/A'}")
                     
                     e_doc_types = [""] + doc_types
                     e_ba_list = [""] + ba_list
@@ -491,11 +482,19 @@ with tab2:
                         edit_crf_subtype = st.selectbox("CRF Type Option", ["", "BRF", "FEF"], index=safe_index(["", "BRF", "FEF"], extracted_sub), key=f"e_crf_sub_{idx}")
 
                     edit_name = st.text_input("Project Name *", value=p.get("Project Name"), key=f"e_nm_{idx}")
-                    edit_ctrl = st.text_input("Control Number", value=p.get("Control Number"), key=f"e_ctrl_{idx}")
+                    edit_ctrl = st.text_input("Control Number", value=p.get("Control Number",""), key=f"e_ctrl_{idx}")
                     edit_po = st.selectbox("PO Status", e_po_status, index=safe_index(e_po_status, p.get("PO Status")), key=f"e_po_{idx}")
                     
                     edit_merchant = st.text_input("Merchant", value=p.get("Merchant"), key=f"e_mer_{idx}")
                     edit_endorsed = st.text_input("Endorsed By", value=p.get("Endorsed By"), key=f"e_end_{idx}")
+                    
+                    def parse_date_safely(d_str):
+                        try:
+                            return datetime.strptime(str(d_str).strip(), "%Y-%m-%d").date() if d_str and str(d_str).strip() not in ["None", ""] else None
+                        except:
+                            return None
+
+                    edit_d_prod = st.date_input("Date Endorsed to Product", value=parse_date_safely(p.get("Date Endorsed Product")), key=f"e_dprod_{idx}")
                     edit_price = st.number_input("Price (PHP)", value=price_val, min_value=0.0, key=f"e_pr_{idx}")
                     
                     edit_approval = "N/A"
@@ -508,12 +507,6 @@ with tab2:
                         if edit_approval == "Rejected":
                             edit_reason = st.text_input("Reason for Rejection *", value=p.get("Reason for Rejection", ""), key=f"e_reas_{idx}")
                             edit_rej_person = st.text_input("Rejector *", value=p.get("Rejector", ""), key=f"e_rejctr_{idx}")
-
-                    def parse_date_safely(d_str):
-                        try:
-                            return datetime.strptime(str(d_str).strip(), "%Y-%m-%d").date() if d_str and str(d_str).strip() not in ["None", ""] else None
-                        except:
-                            return None
 
                     if edit_doc_type == "CRF":
                         lsec("Commercial Timeline")
@@ -552,8 +545,9 @@ with tab2:
                                 
                                 updated_p = {
                                     "ID": p.get("ID"), "Doc Type": final_edit_doc_type, "Project Name": edit_name,
-                                    "Control Number": edit_ctrl, "PO Status": edit_po, "Merchant": edit_merchant,
-                                    "Endorsed By": edit_endorsed, "Project Price": edit_price, "Links": p.get("Links"), 
+                                    "Control Number": edit_ctrl if edit_ctrl else "N/A", "PO Status": edit_po, "Merchant": edit_merchant,
+                                    "Endorsed By": edit_endorsed, "Date Endorsed Product": str(edit_d_prod) if edit_d_prod else "",
+                                    "Project Price": edit_price, "Links": p.get("Links"), 
                                     "Date Endorsed Commercial": str(ed_com) if ed_com else "",
                                     "Doc Expiry Date": str(ed_exp) if ed_exp else "",
                                     "Date Endorsed BA": str(ed_ba) if ed_ba else "", "Assigned BA": edit_ba,
@@ -620,6 +614,7 @@ with tab3:
             p_data = next(p for p in projects if p.get("Project Name") == selected_p_name)
             milestones = {
                 "Commercial Endorsement": p_data.get("Date Endorsed Commercial"),
+                "Product Endorsement": p_data.get("Date Endorsed Product"),
                 "Tech Endorsement": p_data.get("Date Endorsed Tech"),
                 "BA Endorsement": p_data.get("Date Endorsed BA"),
                 "BA Acknowledgement": p_data.get("Date Ack BA"),
