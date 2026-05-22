@@ -7,6 +7,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
 
+# ── Design System Color Variables ────────────────────────────────
 RUSH_ORANGE = "#FF6B00"
 RUSH_TEAL   = "#00AFAA"
 RUSH_YELLOW = "#FDD756"
@@ -26,10 +27,15 @@ h1,h2,h3 {{color:{RUSH_DARK};}}
 
 st.title("RUSH Project Tracker")
 
-# ── Google Sheets Schema Configuration ───────────────────────────
+# ── Google Sheets Hardened Write Connection Engine ───────────────
 SHEET_ID   = st.secrets["GOOGLE_SHEETS_ID"]
 SA_CREDS   = st.secrets["service_account"]
-SCOPE      = ["https://spreadsheets.google.com/feeds","https://www.googleapis.com/auth/drive"]
+
+# FIXED: Replaced legacy deprecated scopes with standard drive/spreadsheet endpoints
+SCOPE      = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
 
 PROJECT_COLS = [
     "ID", "Doc Type", "Project Name", "Control Number", "PO Status", "Merchant", "Endorsed By",
@@ -48,7 +54,8 @@ def get_sheet(tab):
     sh = gc.open_by_key(SHEET_ID)
     try:
         return sh.worksheet(tab)
-    except:
+    except gspread.exceptions.WorksheetNotFound:
+        # FIXED: Only create sheet if explicitly not found to prevent silent permission crashes
         ws = sh.add_worksheet(tab, rows=1000, cols=33)
         if tab == "Projects":
             ws.append_row(PROJECT_COLS)
@@ -62,28 +69,44 @@ def load_projects():
         ws = get_sheet("Projects")
         records = ws.get_all_records()
         return records
-    except:
+    except Exception as e:
+        st.error(f"Failed to fetch data from sheet: {e}")
         return []
 
 def save_project(p):
-    ws = get_sheet("Projects")
-    ws.append_row([p.get(c,"") for c in PROJECT_COLS])
-    load_projects.clear()
+    try:
+        ws = get_sheet("Projects")
+        ws.append_row([p.get(c,"") for c in PROJECT_COLS])
+        load_projects.clear()
+        return True
+    except Exception as e:
+        # FIXED: Catching and outputting explicit write errors on screen
+        st.error(f"Google Sheets Save Error: {e}")
+        return False
 
 def update_project_row(project_id, updated_p):
-    ws = get_sheet("Projects")
-    cell = ws.find(project_id)
-    if cell:
-        row_values = [str(updated_p.get(c, "")) for c in PROJECT_COLS]
-        ws.update(range_name=f"A{cell.row}:W{cell.row}", values=[row_values])
-    load_projects.clear()
+    try:
+        ws = get_sheet("Projects")
+        cell = ws.find(project_id)
+        if cell:
+            row_values = [str(updated_p.get(c, "")) for c in PROJECT_COLS]
+            # FIXED: Converted keyword parameters to clear positional list parameters for v6+ compatibility
+            ws.update(f"A{cell.row}:W{cell.row}", [row_values])
+        load_projects.clear()
+        return True
+    except Exception as e:
+        st.error(f"Error updating row in Google Sheets: {e}")
+        return False
 
 def delete_project_row(project_id):
-    ws = get_sheet("Projects")
-    cell = ws.find(project_id)
-    if cell:
-        ws.delete_rows(cell.row)
-    load_projects.clear()
+    try:
+        ws = get_sheet("Projects")
+        cell = ws.find(project_id)
+        if cell:
+            ws.delete_rows(cell.row)
+        load_projects.clear()
+    except Exception as e:
+        st.error(f"Error removing row from Google Sheets: {e}")
 
 @st.cache_data(ttl=30)
 def load_settings():
@@ -105,7 +128,7 @@ def save_settings(settings_dict):
         ws.append_row([k, json.dumps(v)])
     load_settings.clear()
 
-# ── Session State Init ───────────────────────────────────────────
+# ── Session State Tracking ───────────────────────────────────────
 if "projects" not in st.session_state:
     st.session_state.projects = load_projects()
 
@@ -121,7 +144,7 @@ if "settings" not in st.session_state:
     remote = load_settings()
     st.session_state.settings = {k: remote.get(k, v) for k, v in DEFAULT_SETTINGS.items()}
 
-# ── Sidebar Settings Management ──────────────────────────────────
+# ── Sidebar Configurations Workspace ─────────────────────────────
 st.sidebar.title("Settings")
 s = st.session_state.settings
 
@@ -156,7 +179,7 @@ doc_states = s["doc_states"]
 tribes     = s["tribes"]
 statuses   = s["statuses"]
 
-# ── Tabs Configuration ────────────────────────────────────────────
+# ── Configured Tabs Layout Alignment ─────────────────────────────
 tab1, tab2, tab3 = st.tabs(["Create Project", "All Projects", "Dashboard"])
 
 def lsec(t): st.markdown(f'<p class="lsec">{t}</p>', unsafe_allow_html=True)
@@ -182,7 +205,7 @@ def safe_index(options, value):
     except ValueError:
         return 0
 
-# ── Tab 1: Create Project ─────────────────────────────────────────
+# ── Tab 1: Create Project (Primary Entry Module) ────────────────
 with tab1:
     st.subheader("Add New Record Entry")
     
@@ -195,7 +218,6 @@ with tab1:
 
     doc_type = st.selectbox("Document Type *", placeholder_doc_types, index=0, key="f_doctype")
     
-    # Conditional visibility requirement: If CRF, render a dropdown asking if it's BRF or FEF track
     crf_subtype = ""
     if doc_type == "CRF":
         crf_subtype = st.selectbox("CRF Type Option", ["", "BRF", "FEF"], index=0, key="f_crf_subtype")
@@ -224,16 +246,16 @@ with tab1:
         else:
             approval_status = "N/A"
 
-        # Conditional visibility layout: Commercial Timeline visible only for CRF tracking
+        # Grouped Pair 1: Commercial Timeline (CRF Exclusive Visibility)
         if doc_type == "CRF":
             lsec("Commercial Timeline")
             g1_left, g1_right = st.columns(2)
             with g1_left: d_commercial = st.date_input("Date Endorsed to Commercials", value=None, key="f_dcom")
             with g1_right: d_expiry = st.date_input("Document Expiry Date", value=None, key="f_dexp")
         else:
-            d_commercial = ""
-            d_expiry = ""
+            d_commercial, d_expiry = "", ""
 
+        # Grouped Pair 2: BA Timelines positioned above selectors
         lsec("BA Assignment & Workflow")
         g2_left, g2_right = st.columns(2)
         with g2_left: d_ba = st.date_input("Date Endorsed to BA", value=None, key="f_dba")
@@ -245,6 +267,7 @@ with tab1:
         with c2:
             doc_state = st.selectbox("Document State", placeholder_doc_states, index=0, key="f_docstate")
 
+        # Tribe and Sprint Unified Configuration Area
         lsec("Tribe & Sprint Parameters")
         c1, c2 = st.columns(2)
         with c1:
@@ -252,6 +275,7 @@ with tab1:
         with c2:
             sprint = st.text_input("Sprint (Optional)", placeholder="e.g., Sprint 42", key="f_sprint")
 
+        # Grouped Pair 3: Tech Timelines
         lsec("Tech Timeline & Status")
         g3_left, g3_right = st.columns(2)
         with g3_left: d_tech = st.date_input("Date Endorsed to Tech", value=None, key="f_dtech")
@@ -296,7 +320,6 @@ with tab1:
                 if fef_url: links_compiled.append(f"FEF: {fef_url}")
                 if figma_url: links_compiled.append(f"Figma: {figma_url}")
 
-                # Compile structured Doc Type title description if sub-selected
                 final_saved_doc_type = f"CRF - {crf_subtype}" if (doc_type == "CRF" and crf_subtype) else doc_type
 
                 new_p = {
@@ -318,11 +341,12 @@ with tab1:
                     "Remarks": remarks,
                     "Created At": datetime.now().isoformat()
                 }
-                save_project(new_p)
-                st.success("Project added successfully to registry table view!")
-                st.rerun()
+                # FIXED: Verified feedback loop check logic before performing view refreshes
+                if save_project(new_p):
+                    st.success("Project added successfully!")
+                    st.rerun()
 
-# ── Tab 2: All Projects Registry View ──────────────────────────────
+# ── Tab 2: All Projects Matrix Table View ────────────────────────
 with tab2:
     st.subheader("All Projects Registry")
     projects = tag_expiry(load_projects())
@@ -348,6 +372,7 @@ with tab2:
 
         st.markdown("---")
         
+        # Consistent Matrix Grid Headers
         th1, th2, th3, th4, th5, th6, th7, th8 = st.columns([1.5, 2.0, 1.3, 1.2, 1.2, 1.0, 1.8, 1.2])
         th1.markdown("**Control #**")
         th2.markdown("**Project Name**")
@@ -377,6 +402,7 @@ with tab2:
                 
             r7.write(" | ".join(detail_items))
             
+            # Action Column Grouping: Edit & Delete Elements
             with r8:
                 with st.popover("Edit", use_container_width=True):
                     st.markdown(f"### Edit Row: {p.get('Control Number')}")
@@ -388,7 +414,6 @@ with tab2:
                     e_statuses = [""] + statuses
                     e_po_status = ["", "Done", "Not Yet Done"]
                     
-                    # Unpack composite Doc Type elements safely for parsing back into dropdown forms
                     raw_stored_type = p.get("Doc Type", "")
                     base_parsed_type = "CRF" if raw_stored_type.startswith("CRF") else raw_stored_type
                     extracted_sub = raw_stored_type.split(" - ")[1] if " - " in raw_stored_type else ""
@@ -418,7 +443,6 @@ with tab2:
                         except:
                             return None
 
-                    # Conditional Editing Visibility: Commercial dates rendered only for CRF tracks
                     if edit_doc_type == "CRF":
                         lsec("Commercial Timeline")
                         ed_com = st.date_input("Date Endorsed to Commercials", value=parse_date_safely(p.get("Date Endorsed Commercial")), key=f"ed_com_{idx}")
@@ -475,9 +499,9 @@ with tab2:
                                 "Remarks": edit_remarks,
                                 "Created At": p.get("Created At")
                             }
-                            update_project_row(p.get("ID"), updated_p)
-                            st.success("Record parameters modified successfully!")
-                            st.rerun()
+                            if update_project_row(p.get("ID"), updated_p):
+                                st.success("Record parameters modified successfully!")
+                                st.rerun()
                 
                 if st.button("Delete", key=f"del_{idx}", use_container_width=True, type="secondary"):
                     delete_project_row(p.get("ID",""))
@@ -487,7 +511,7 @@ with tab2:
     else:
         st.info("No projects match your registry search query or active filter configurations.")
 
-# ── Tab 3: Dashboard Analytics ────────────────────────────────────
+# ── Tab 3: Dashboard Analytics (Terminal Tab View) ───────────────
 with tab3:
     st.subheader("Project Dashboard Metrics")
     projects = tag_expiry(load_projects())
