@@ -4,7 +4,6 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import json
-import io  # Added standard library import for memory stream buffering
 
 # ── Design System Color Variables ────────────────────────────────
 RUSH_ORANGE = "#FF6B00"
@@ -387,62 +386,59 @@ with tab2:
     st.subheader("All Projects Registry")
     projects = load_projects()
     
-    if projects:
-        f_search = st.text_input("Global Search by Project Name", placeholder="Type project name to filter...", key="registry_search_bar")
-        
-        # ── Refactored 6x Dimension Filter Row Config ────────────────────
-        c1, c2, c3 = st.columns(3)
-        with c1: f_doctype = st.multiselect("Filter by Document Type", doc_types + ["CRF - BRF", "CRF - FEF"])
-        with c2: f_postatus = st.multiselect("Filter by PO Status", ["Done", "Not Yet Done"])
-        with c3: f_projstatus = st.multiselect("Filter by Project Status", project_statuses + ["N/A"])
-        
-        c4, c5, c6 = st.columns(3)
-        with c4: f_ba = st.multiselect("Filter by Assigned BA", ba_list)
-        with c5: f_docstate = st.multiselect("Filter by Document State", doc_states)
-        with c6: f_pipeline = st.multiselect("Filter by Pipeline Status", statuses)
+    f_search = st.text_input("Global Search by Project Name", placeholder="Type project name to filter...", key="registry_search_bar")
+    
+    # ── Refactored 6x Dimension Filter Row Config ────────────────────
+    c1, c2, c3 = st.columns(3)
+    with c1: f_doctype = st.multiselect("Filter by Document Type", doc_types + ["CRF - BRF", "CRF - FEF"])
+    with c2: f_postatus = st.multiselect("Filter by PO Status", ["Done", "Not Yet Done"])
+    with c3: f_projstatus = st.multiselect("Filter by Project Status", project_statuses + ["N/A"])
+    
+    c4, c5, c6 = st.columns(3)
+    with c4: f_ba = st.multiselect("Filter by Assigned BA", ba_list)
+    with c5: f_docstate = st.multiselect("Filter by Document State", doc_states)
+    with c6: f_pipeline = st.multiselect("Filter by Pipeline Status", statuses)
 
-        # Processing filtering calculations
-        filtered = []
-        for p in projects:
-            p_doc_type = str(p.get("Doc Type", ""))
-            p_po_status = str(p.get("PO Status", ""))
-            p_proj_status = str(p.get("Project Status", ""))
-            p_assigned_ba = str(p.get("Assigned BA", ""))
-            p_doc_state = str(p.get("Doc State", ""))
-            p_pipeline = str(p.get("Pipeline Status", ""))
-            
-            if (not f_search or f_search.lower() in str(p.get("Project Name","")).lower()) \
-               and (not f_doctype or any(f in p_doc_type for f in f_doctype)) \
-               and (not f_postatus or p_po_status in f_postatus) \
-               and (not f_projstatus or p_proj_status in f_projstatus) \
-               and (not f_ba or p_assigned_ba in f_ba) \
-               and (not f_docstate or p_doc_state in f_docstate) \
-               and (not f_pipeline or p_pipeline in f_pipeline):
-                filtered.append(p)
+    # Processing filtering calculations
+    filtered = []
+    for p in projects:
+        p_doc_type = str(p.get("Doc Type", ""))
+        p_po_status = str(p.get("PO Status", ""))
+        p_proj_status = str(p.get("Project Status", ""))
+        p_assigned_ba = str(p.get("Assigned BA", ""))
+        p_doc_state = str(p.get("Doc State", ""))
+        p_pipeline = str(p.get("Pipeline Status", ""))
+        
+        if (not f_search or f_search.lower() in str(p.get("Project Name","")).lower()) \
+           and (not f_doctype or any(f in p_doc_type for f in f_doctype)) \
+           and (not f_postatus or p_po_status in f_postatus) \
+           and (not f_projstatus or p_proj_status in f_projstatus) \
+           and (not f_ba or p_assigned_ba in f_ba) \
+           and (not f_docstate or p_doc_state in f_docstate) \
+           and (not f_pipeline or p_pipeline in f_pipeline):
+            filtered.append(p)
 
-        # ── Hardened StringIO File Stream Wrapper Exporter Engine ──
-        if len(filtered) > 0:
-            df_export = pd.DataFrame(filtered)
-            if "ID" in df_export.columns: 
-                df_export = df_export.drop(columns=["ID"])
-            
-            # Fix: Wrap string output inside an IO stream buffer object to eliminate telemetry crashes
-            csv_buffer = io.StringIO()
-            df_export.to_csv(csv_buffer, index=False)
-            csv_string_payload = csv_buffer.getvalue()
-            
-            st.download_button(
-                label="📥 Export Current Filtered Dataset to CSV",
-                data=csv_string_payload,
-                fileName=f"RUSH_Filtered_Projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        else:
-            st.button("📥 Export Current Filtered Dataset to CSV", disabled=True, use_container_width=True, help="No data matching current filters to export.")
+    # ── Hardened Continuous Exporter Engine (Fixed Stream Format) ──
+    # This button now stays on the screen at all times, even if no filters are applied.
+    if len(filtered) > 0:
+        df_export = pd.DataFrame(filtered)
+        if "ID" in df_export.columns: 
+            df_export = df_export.drop(columns=["ID"])
         
-        st.markdown("---")
-        
+        st.download_button(
+            label="📥 Export Current Filtered Dataset to CSV",
+            data=df_export.to_csv(index=False),
+            fileName=f"RUSH_Filtered_Projects_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="continuous_csv_downloader"
+        )
+    else:
+        st.button("📥 Export Current Filtered Dataset to CSV", disabled=True, use_container_width=True, help="No data matching current filters to export.")
+    
+    st.markdown("---")
+    
+    if filtered:
         # Grid layout rendering block
         th1, th2, th3, th4, th5, th6, th7, th8 = st.columns([1.5, 2.0, 1.3, 1.2, 1.2, 1.0, 1.8, 1.2])
         th1.markdown("**Control #**")
@@ -506,87 +502,3 @@ with tab2:
                     edit_po = st.selectbox("PO Status", e_po_status, index=safe_index(e_po_status, p.get("PO Status")), key=f"e_po_{idx}")
                     
                     edit_merchant = st.text_input("Merchant", value=p.get("Merchant"), key=f"e_mer_{idx}")
-                    edit_endorsed = st.text_input("Endorsed By", value=p.get("Endorsed By"), key=f"e_end_{idx}")
-                    
-                    def parse_date_safely(d_str):
-                        try:
-                            return datetime.strptime(str(d_str).strip(), "%Y-%m-%d").date() if d_str and str(d_str).strip() not in ["None", ""] else None
-                        except:
-                            return None
-
-                    edit_d_prod = st.date_input("Date Endorsed to Product", value=parse_date_safely(p.get("Date Endorsed Product")), key=f"e_dprod_{idx}")
-                    edit_price = st.number_input("Price (PHP)", value=price_val, min_value=0.0, key=f"e_pr_{idx}")
-                    
-                    # Safe fallbacks configuration fields
-                    edit_approval = "N/A"
-                    edit_reason = ""
-                    edit_rej_person = ""
-                    ed_com = ""
-                    ed_exp = ""
-                    
-                    if edit_doc_type in ["CRF", "BRF", "FEF"]:
-                        edit_approval = st.selectbox("Project Status", e_project_statuses, index=safe_index(e_project_statuses, p.get("Project Status")), key=f"e_app_{idx}")
-                        if edit_approval == "Rejected":
-                            edit_reason = st.text_input("Reason for Rejection *", value=p.get("Reason for Rejection", ""), key=f"e_reas_{idx}")
-                            edit_rej_person = st.text_input("Rejector *", value=p.get("Rejector", ""), key=f"e_rejctr_{idx}")
-
-                    if edit_doc_type == "CRF":
-                        lsec("Commercial Timeline")
-                        ed_com = st.date_input("Date Endorsed to Commercials", value=parse_date_safely(p.get("Date Endorsed Commercial")), key=f"ed_com_{idx}")
-                        ed_exp = st.date_input("Document Expiry Date", value=parse_date_safely(p.get("Doc Expiry Date")), key=f"ed_exp_{idx}")
-
-                    lsec("BA Assignment & Workflow")
-                    ed_ba = st.date_input("Date Endorsed to BA", value=parse_date_safely(p.get("Date Endorsed BA")), key=f"ed_ba_{idx}")
-                    ed_ack = st.date_input("Date Acknowledged by BA", value=parse_date_safely(p.get("Date Ack BA")), key=f"ed_ack_{idx}")
-                    
-                    edit_ba = st.selectbox("Assigned BA", e_ba_list, index=safe_index(e_ba_list, p.get("Assigned BA")), key=f"e_ba_{idx}")
-                    edit_doc_state = st.selectbox("Document State", e_doc_states, index=safe_index(e_doc_states, p.get("Doc State")), key=f"e_ds_{idx}")
-                    
-                    lsec("Tribe & Sprint Parameters")
-                    edit_tribe = st.selectbox("Tribe", e_tribes, index=safe_index(e_tribes, p.get("Tribe")), key=f"e_tr_{idx}")
-                    edit_sprint = st.text_input("Sprint", value=p.get("Sprint",""), key=f"e_sp_{idx}")
-                    
-                    lsec("Tech Timeline & Status")
-                    ed_tech = st.date_input("Date Endorsed to Tech", value=parse_date_safely(p.get("Date Endorsed Tech")), key=f"ed_tech_{idx}")
-                    ed_go = st.date_input("Go Live Date", value=parse_date_safely(p.get("Go Live Date")), key=f"ed_go_{idx}")
-                    edit_status = st.selectbox("Pipeline Status", e_statuses, index=safe_index(e_statuses, p.get("Pipeline Status")), key=f"e_st_{idx}")
-                    
-                    edit_remarks = st.text_area("Remarks", value=p.get("Remarks"), key=f"e_rem_{idx}")
-                    
-                    c_sav, c_del = st.columns(2)
-                    with c_sav:
-                        if st.button("Update", key=f"save_edit_{idx}", use_container_width=True, type="primary"):
-                            if not edit_name or edit_doc_type == "":
-                                st.error("Mandatory fields missing.")
-                            elif edit_approval == "Rejected" and (not edit_reason or not edit_rej_person):
-                                st.error("Reason for Rejection and Rejector are mandatory for Rejected status.")
-                            else:
-                                final_edit_doc_type = f"CRF - {edit_crf_subtype}" if (edit_doc_type == "CRF" and edit_crf_subtype) else edit_doc_type
-                                
-                                updated_p = {
-                                    "ID": p.get("ID"), "Doc Type": final_edit_doc_type, "Project Name": edit_name,
-                                    "Control Number": edit_ctrl if edit_ctrl else "N/A", "PO Status": edit_po, "Merchant": edit_merchant,
-                                    "Endorsed By": edit_endorsed, "Date Endorsed Product": str(edit_d_prod) if edit_d_prod else "",
-                                    "Project Price": edit_price, "Links": p.get("Links"), 
-                                    "Date Endorsed Commercial": str(ed_com) if ed_com else "",
-                                    "Doc Expiry Date": str(ed_exp) if ed_exp else "",
-                                    "Date Endorsed BA": str(ed_ba) if ed_ba else "", "Assigned BA": edit_ba,
-                                    "Date Ack BA": str(ed_ack) if ed_ack else "", "Doc State": edit_doc_state,
-                                    "Tribe": edit_tribe, "Sprint": edit_sprint, "Pipeline Status": edit_status,
-                                    "Date Endorsed Tech": str(ed_tech) if ed_tech else "", "Go Live Date": str(ed_go) if ed_go else "",
-                                    "Project Status": edit_approval, "Reason for Rejection": edit_reason,
-                                    "Rejector": edit_rej_person, "Remarks": edit_remarks, "Created At": p.get("Created At")
-                                }
-                                if update_project_row(p.get("ID"), updated_p):
-                                    st.session_state.toast_notification = "Project updated successfully!"
-                                    st.rerun()
-                                    
-                    with c_del:
-                        if st.button("Remove", key=f"del_{idx}", use_container_width=True, type="secondary"):
-                            if delete_project_row(p.get("ID","")):
-                                st.session_state.toast_notification = "Project dropped from matrix."
-                                st.rerun()
-                                
-            st.markdown("<hr style='margin:6px 0px; border-top: 1px solid #E5E5E5;' />", unsafe_allow_html=True)
-    else:
-        st.info("No projects match your registry search query or active filter configurations.")
